@@ -16,7 +16,9 @@ Telegram-бот для закрытого круга (друзья/семья, �
 - **Бот:** [grammY](https://grammy.dev/) + `@grammyjs/conversations` (пошаговые диалоги:
   онбординг, коррекция). Long polling, без вебхука.
 - **ИИ:** `@anthropic-ai/sdk`, модель `claude-sonnet-5` (vision). Ответ — строго через
-  tool use / JSON-схему, не парсинг свободного текста.
+  tool use / JSON-схему, не парсинг свободного текста. Остальной код зависит от
+  провайдер-независимого контракта в `src/ai/foodAnalyzer.ts`, а не от Anthropic SDK
+  напрямую — это даёт возможность заменить ИИ-провайдера, поменяв только `src/claude/`.
 - **БД:** SQLite (`better-sqlite3`) + Drizzle ORM. Файл БД и фото — в `data/` (не в git).
 - **Планировщик:** `node-cron` для сводок/напоминаний/очистки старых фото.
 - **Деплой:** Docker + docker-compose на VPS, один контейнер, volume `data/`.
@@ -31,9 +33,12 @@ src/
     schema.ts               # Drizzle-схема: users, profiles, weight_log, meals, meal_items
     client.ts                # инициализация better-sqlite3 + drizzle
     migrate.ts               # прогон миграций
+  ai/
+    foodAnalyzer.ts          # контракт (типы + FoodAnalyzer) — остальной код зовёт
+                              # analyzeFood отсюда, не из конкретного провайдера
   claude/
-    analyzeFood.ts           # вызов Anthropic API (фото и/или текст → КБЖУ)
-    prompts.ts                # системные промпты и tool-схема
+    analyzeFood.ts           # реализация FoodAnalyzer поверх Anthropic API
+    prompts.ts                # системные промпты и tool-схема Claude
   features/
     onboarding.ts            # инвайт-код + анкета профиля
     mealLogging.ts            # обработка фото/текста → meal + meal_items
