@@ -1,15 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createMock = vi.fn();
+const clientConstructorMock = vi.fn();
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     messages = { create: createMock };
+    constructor(options: unknown) {
+      clientConstructorMock(options);
+    }
   },
 }));
 
 vi.mock("../config.js", () => ({
-  config: { anthropicApiKey: "test-key" },
+  config: {
+    anthropicApiKey: "test-key",
+    anthropicBaseUrl: undefined,
+    anthropicModel: "claude-sonnet-5",
+  },
 }));
 
 const { analyzeFood } = await import("./analyzeFood.js");
@@ -54,6 +62,11 @@ describe("claude/analyzeFood", () => {
       },
       { type: "text", text: "с добавкой соуса" },
     ]);
+    expect(call.model).toBe("claude-sonnet-5");
+    expect(clientConstructorMock).toHaveBeenCalledWith({
+      apiKey: "test-key",
+      baseURL: undefined,
+    });
   });
 
   it("maps a valid tool response into camelCase result", async () => {

@@ -12,9 +12,17 @@ export const config = {
   get botToken(): string {
     return required("BOT_TOKEN");
   },
+  // Если задан ANTHROPIC_BASE_URL (сторонний Anthropic-совместимый прокси), ключ
+  // берётся из CUSTOMIX_API_KEY, а не из ANTHROPIC_API_KEY — это разные ключи от
+  // разных сервисов, и переключение прокси не должно затирать прямой ключ Anthropic.
   get anthropicApiKey(): string {
-    return required("ANTHROPIC_API_KEY");
+    return process.env.ANTHROPIC_BASE_URL
+      ? required("CUSTOMIX_API_KEY")
+      : required("ANTHROPIC_API_KEY");
   },
+  // Пусто/не задано — используется официальный endpoint Anthropic по умолчанию из SDK.
+  anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || undefined,
+  anthropicModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-5",
   inviteCodes: (process.env.INVITE_CODES ?? "")
     .split(",")
     .map((code) => code.trim())

@@ -3,12 +3,19 @@ import { config } from "../config.js";
 import type { AnalyzeFoodInput, AnalyzeFoodResult, FoodItem } from "../ai/foodAnalyzer.js";
 import { FOOD_ANALYSIS_TOOL, SYSTEM_PROMPT } from "./prompts.js";
 
-const MODEL = "claude-sonnet-5";
-
 let client: Anthropic | undefined;
 
 function getClient(): Anthropic {
-  client ??= new Anthropic({ apiKey: config.anthropicApiKey });
+  client ??= new Anthropic({
+    apiKey: config.anthropicApiKey,
+    baseURL: config.anthropicBaseUrl,
+    // При работе через сторонний прокси (ANTHROPIC_BASE_URL) официальный
+    // User-Agent SDK ("Anthropic/JS ...") блокируется файрволом прокси (Cloudflare
+    // 403 "Your request was blocked") — с прямым api.anthropic.com такой проблемы нет.
+    ...(config.anthropicBaseUrl
+      ? { defaultHeaders: { "User-Agent": "food-calculator-bot/1.0" } }
+      : {}),
+  });
   return client;
 }
 
@@ -51,7 +58,7 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
   }
 
   const response = await getClient().messages.create({
-    model: MODEL,
+    model: config.anthropicModel,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     tools: [FOOD_ANALYSIS_TOOL],
