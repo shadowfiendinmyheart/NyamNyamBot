@@ -1,0 +1,78 @@
+# food-calculator — Telegram-бот для подсчёта калорий по фото
+
+Telegram-бот для закрытого круга (друзья/семья, доступ по инвайт-коду). Пользователь
+присылает фото еды или текстовое описание → Claude (vision) оценивает КБЖУ → бот ведёт
+дневник питания: дневная норма калорий/БЖУ (формула Миффлина-Сан Жеора), история приёмов
+пищи, ручная коррекция оценок, трекинг веса, ежедневные/еженедельные отчёты.
+
+Полное архитектурное решение и обоснования — в
+`/Users/garfield/.claude/plans/merry-hugging-kahn.md` (там же контекст всех решений,
+согласованных с пользователем). Этот файл — краткая шпаргалка для разработки, список
+фич по итерациям — в [docs/BACKLOG.md](docs/BACKLOG.md).
+
+## Стек
+
+- **Рантайм:** Node.js + TypeScript, ESM (`"type": "module"` в package.json).
+- **Бот:** [grammY](https://grammy.dev/) + `@grammyjs/conversations` (пошаговые диалоги:
+  онбординг, коррекция). Long polling, без вебхука.
+- **ИИ:** `@anthropic-ai/sdk`, модель `claude-sonnet-5` (vision). Ответ — строго через
+  tool use / JSON-схему, не парсинг свободного текста.
+- **БД:** SQLite (`better-sqlite3`) + Drizzle ORM. Файл БД и фото — в `data/` (не в git).
+- **Планировщик:** `node-cron` для сводок/напоминаний/очистки старых фото.
+- **Деплой:** Docker + docker-compose на VPS, один контейнер, volume `data/`.
+
+## Структура кода
+
+```
+src/
+  bot.ts                  # точка входа, регистрация всех хендлеров
+  config.ts                # чтение .env (уже готово)
+  db/
+    schema.ts               # Drizzle-схема: users, profiles, weight_log, meals, meal_items
+    client.ts                # инициализация better-sqlite3 + drizzle
+    migrate.ts               # прогон миграций
+  claude/
+    analyzeFood.ts           # вызов Anthropic API (фото и/или текст → КБЖУ)
+    prompts.ts                # системные промпты и tool-схема
+  features/
+    onboarding.ts            # инвайт-код + анкета профиля
+    mealLogging.ts            # обработка фото/текста → meal + meal_items
+    correction.ts             # inline-кнопки и диалог правки оценки
+    reports.ts                 # /today, /week, вечерняя сводка, недельный отчёт
+    weight.ts                  # /weight, пересчёт нормы КБЖУ
+  cron/
+    scheduler.ts              # node-cron задачи
+  nutrition/
+    calculations.ts           # формула Миффлина-Сан Жеора + распределение БЖУ
+docker-compose.yml
+Dockerfile
+.env.example
+```
+
+## Конвенции
+
+- Код (имена переменных/функций/файлов) — на английском. Все сообщения бота
+  пользователю и комментарии в промптах Claude — на русском (интерфейс только русский).
+- Все ответы Claude по еде — строго структурированные (tool use), без парсинга
+  произвольного текста.
+- Любая денежная/числовая величина КБЖУ — целые ккал, граммы БЖУ с одним знаком после
+  запятой.
+- Время/даты — храним в UTC, отображаем в таймзоне пользователя (`users.timezone`,
+  дефолт из `DEFAULT_TIMEZONE`).
+- Новая функциональность добавляется по одному тикету из `docs/BACKLOG.md` за раз —
+  каждый тикет должен собираться (`npm run build`) и, где применимо, покрываться тестом
+  (`npm test`) до перехода к следующему.
+
+## Как запускать
+
+```bash
+cp .env.example .env   # заполнить BOT_TOKEN, ANTHROPIC_API_KEY, INVITE_CODES
+npm install
+npm run db:migrate
+npm run dev             # long polling локально
+```
+
+## Текущий статус
+
+Готово: `package.json`, `tsconfig.json`, `src/config.ts`, `.env.example`, `.gitignore`.
+Дальше — по порядку тикетов в [docs/BACKLOG.md](docs/BACKLOG.md).
