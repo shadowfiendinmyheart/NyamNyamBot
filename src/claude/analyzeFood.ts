@@ -59,7 +59,7 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
 
   const response = await getClient().messages.create({
     model: config.anthropicModel,
-    max_tokens: 1024,
+    max_tokens: 4096,
     system: SYSTEM_PROMPT,
     tools: [FOOD_ANALYSIS_TOOL],
     tool_choice: { type: "tool", name: FOOD_ANALYSIS_TOOL.name },
@@ -70,6 +70,7 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
   );
   if (!toolUse) {
+    console.error("DEBUG raw response:", JSON.stringify(response, null, 2));
     throw new Error("Claude не вернул структурированный ответ через analyze_food");
   }
 
