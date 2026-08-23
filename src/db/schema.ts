@@ -9,6 +9,24 @@ export const users = sqliteTable("users", {
     .default(sql`(unixepoch())`),
 });
 
+export const profiles = sqliteTable("profiles", {
+  userId: integer("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  sex: text("sex", { enum: ["male", "female"] }).notNull(),
+  age: integer("age").notNull(),
+  heightCm: real("height_cm").notNull(),
+  weightKg: real("weight_kg").notNull(),
+  activityLevel: text("activity_level", {
+    enum: ["sedentary", "light", "moderate", "active", "very_active"],
+  }).notNull(),
+  goal: text("goal", { enum: ["lose", "maintain", "gain"] }).notNull(),
+  dailyKcalTarget: integer("daily_kcal_target").notNull(),
+  proteinGTarget: real("protein_g_target").notNull(),
+  fatGTarget: real("fat_g_target").notNull(),
+  carbGTarget: real("carb_g_target").notNull(),
+});
+
 export const meals = sqliteTable("meals", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id")

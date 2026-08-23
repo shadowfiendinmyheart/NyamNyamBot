@@ -1,8 +1,11 @@
-import { Bot, type Context } from "grammy";
+import { Bot } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
+import type { MyContext } from "../context.js";
 import { getMealsForUserOnDate, sumNutrition, type MealRow } from "../db/meals.js";
+import { getProfileByUserId } from "../db/profiles.js";
+import type { NutritionTargets } from "../nutrition/calculations.js";
 import { MEAL_TYPE_LABEL } from "./mealLogging.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -63,7 +66,11 @@ export function getTodayBoundsUtc(now: Date, timeZone: string): { start: Date; e
   return { start, end };
 }
 
-export function buildTodayReport(meals: MealRow[], timeZone: string): string {
+export function buildTodayReport(
+  meals: MealRow[],
+  timeZone: string,
+  targets?: NutritionTargets,
+): string {
   if (meals.length === 0) {
     return "Сегодня записей о приёмах пищи пока нет.";
   }
@@ -93,15 +100,27 @@ export function buildTodayReport(meals: MealRow[], timeZone: string): string {
       `Ж ${totals.fatG.toFixed(1)} У ${totals.carbG.toFixed(1)}`,
   ];
 
+  if (targets) {
+    const remainingKcal = targets.dailyKcalTarget - totals.kcal;
+    parts.push(
+      `Норма: ${targets.dailyKcalTarget} ккал | Б ${targets.proteinGTarget.toFixed(1)} ` +
+        `Ж ${targets.fatGTarget.toFixed(1)} У ${targets.carbGTarget.toFixed(1)}`,
+      remainingKcal >= 0
+        ? `Осталось: ${remainingKcal} ккал`
+        : `Превышение: ${-remainingKcal} ккал`,
+    );
+  }
+
   return parts.join("\n");
 }
 
-export function registerReports(bot: Bot<Context>, db: Db): void {
+export function registerReports(bot: Bot<MyContext>, db: Db): void {
   bot.command("today", async (ctx) => {
     if (!ctx.from) return;
 
     const { start, end } = getTodayBoundsUtc(new Date(), config.defaultTimezone);
     const meals = getMealsForUserOnDate(db, ctx.from.id, start, end);
-    await ctx.reply(buildTodayReport(meals, config.defaultTimezone));
+    const profile = getProfileByUserId(db, ctx.from.id);
+    await ctx.reply(buildTodayReport(meals, config.defaultTimezone, profile));
   });
 }

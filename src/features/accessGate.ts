@@ -1,7 +1,8 @@
-import type { Context, MiddlewareFn } from "grammy";
+import type { MiddlewareFn } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
+import type { MyContext } from "../context.js";
 import { createUser, getUserByTelegramId } from "../db/users.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -12,7 +13,7 @@ function matchesInviteCode(code: string): boolean {
   );
 }
 
-export function createAccessGate(db: Db): MiddlewareFn<Context> {
+export function createAccessGate(db: Db): MiddlewareFn<MyContext> {
   return async (ctx, next) => {
     if (!ctx.from) return;
 
@@ -35,8 +36,7 @@ export function createAccessGate(db: Db): MiddlewareFn<Context> {
       return;
     }
 
-    await ctx.reply(
-      "Добро пожаловать! Присылайте фото еды или опишите текстом, что съели.",
-    );
+    await ctx.reply("Добро пожаловать! Давайте настроим профиль, чтобы посчитать вашу дневную норму.");
+    await ctx.conversation.enter("onboarding");
   };
 }

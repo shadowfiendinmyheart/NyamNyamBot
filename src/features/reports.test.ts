@@ -61,4 +61,32 @@ describe("features/reports buildTodayReport", () => {
     );
     expect(message).toContain("Итого: 770 ккал | Б 42.0 Ж 16.5 У 85.0");
   });
+
+  it("без профиля не показывает норму", () => {
+    const message = buildTodayReport([baseMeal], "Europe/Moscow");
+    expect(message).not.toContain("Норма:");
+  });
+
+  it("с профилем показывает норму и остаток", () => {
+    const message = buildTodayReport([baseMeal], "Europe/Moscow", {
+      dailyKcalTarget: 2000,
+      proteinGTarget: 120,
+      fatGTarget: 60,
+      carbGTarget: 220,
+    });
+
+    expect(message).toContain("Норма: 2000 ккал | Б 120.0 Ж 60.0 У 220.0");
+    expect(message).toContain("Осталось: 1680 ккал");
+  });
+
+  it("при превышении нормы показывает превышение", () => {
+    const message = buildTodayReport([baseMeal], "Europe/Moscow", {
+      dailyKcalTarget: 200,
+      proteinGTarget: 20,
+      fatGTarget: 10,
+      carbGTarget: 20,
+    });
+
+    expect(message).toContain("Превышение: 120 ккал");
+  });
 });

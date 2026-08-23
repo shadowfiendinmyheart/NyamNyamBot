@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Bot, InlineKeyboard, type Context } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
+import type { MyContext } from "../context.js";
 import { analyzeFood, type FoodItem, type ImageMimeType } from "../ai/foodAnalyzer.js";
 import { createMeal, deleteMealForUser, sumNutrition, type MealType } from "../db/meals.js";
 
@@ -77,7 +78,7 @@ function deleteKeyboard(mealId: number): InlineKeyboard {
   return new InlineKeyboard().text("🗑 Удалить", `delete_meal:${mealId}`);
 }
 
-export function registerMealLogging(bot: Bot<Context>, db: Db): void {
+export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text.trim();
     if (!text || text.startsWith("/")) return;
