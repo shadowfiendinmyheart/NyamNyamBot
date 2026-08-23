@@ -5,7 +5,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as schema from "./schema.js";
 import { createUser } from "./users.js";
-import { createMeal, deleteMealForUser } from "./meals.js";
+import { createMeal, deleteMealForUser, getMealsForUserOnDate } from "./meals.js";
 
 function makeDb() {
   const sqlite = new Database(":memory:");
@@ -71,5 +71,47 @@ describe("db/meals", () => {
       .where(eq(schema.mealItems.mealId, mealId))
       .all();
     expect(items).toHaveLength(0);
+  });
+});
+
+function insertMeal(db: ReturnType<typeof makeDb>, userId: number, loggedAt: Date) {
+  db.insert(schema.meals)
+    .values({
+      userId,
+      loggedAt,
+      mealType: "snack",
+      source: "text",
+      description: "тест",
+      kcal: 100,
+      proteinG: 1,
+      fatG: 1,
+      carbG: 1,
+    })
+    .run();
+}
+
+describe("db/meals getMealsForUserOnDate", () => {
+  let db: ReturnType<typeof makeDb>;
+
+  beforeEach(() => {
+    db = makeDb();
+    createUser(db, 1, "alice");
+    createUser(db, 2, "bob");
+  });
+
+  it("returns only the given user's meals within [start, end), ordered by loggedAt", () => {
+    insertMeal(db, 1, new Date("2026-08-22T23:59:59Z")); // до окна
+    insertMeal(db, 1, new Date("2026-08-23T00:00:00Z")); // включительно start
+    insertMeal(db, 1, new Date("2026-08-23T12:00:00Z"));
+    insertMeal(db, 1, new Date("2026-08-24T00:00:00Z")); // исключительно end
+    insertMeal(db, 2, new Date("2026-08-23T06:00:00Z")); // другой пользователь
+
+    const start = new Date("2026-08-23T00:00:00Z");
+    const end = new Date("2026-08-24T00:00:00Z");
+    const meals = getMealsForUserOnDate(db, 1, start, end);
+
+    expect(meals).toHaveLength(2);
+    expect(meals[0]?.loggedAt).toEqual(start);
+    expect(meals[1]?.loggedAt).toEqual(new Date("2026-08-23T12:00:00Z"));
   });
 });

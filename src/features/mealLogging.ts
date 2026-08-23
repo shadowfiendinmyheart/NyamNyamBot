@@ -24,7 +24,7 @@ function extensionForMimeType(mimeType: ImageMimeType): string {
 
 type Db = BetterSQLite3Database<typeof schema>;
 
-const MEAL_TYPE_LABEL: Record<MealType, string> = {
+export const MEAL_TYPE_LABEL: Record<MealType, string> = {
   breakfast: "🌅 Завтрак",
   lunch: "🍲 Обед",
   dinner: "🌙 Ужин",

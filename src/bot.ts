@@ -3,6 +3,7 @@ import { config } from "./config.js";
 import { db } from "./db/client.js";
 import { createAccessGate } from "./features/accessGate.js";
 import { registerMealLogging } from "./features/mealLogging.js";
+import { registerReports } from "./features/reports.js";
 
 const bot = new Bot(config.botToken);
 
@@ -13,9 +14,12 @@ bot.catch((err) => {
 bot.use(createAccessGate(db));
 
 bot.command("help", async (ctx) => {
-  await ctx.reply("Доступные команды:\n/help — этот список");
+  await ctx.reply(
+    "Доступные команды:\n/today — сводка приёмов пищи за сегодня\n/help — этот список",
+  );
 });
 
+registerReports(bot, db);
 registerMealLogging(bot, db);
 
 bot
