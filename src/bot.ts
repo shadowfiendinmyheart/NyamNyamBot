@@ -3,8 +3,13 @@ import { conversations, createConversation } from "@grammyjs/conversations";
 import { config } from "./config.js";
 import type { MyContext } from "./context.js";
 import { db } from "./db/client.js";
-import { deleteProfile } from "./db/profiles.js";
 import { createAccessGate } from "./features/accessGate.js";
+import {
+  HELP_TEXT,
+  mainKeyboard,
+  registerMainMenu,
+  resetConfirmKeyboard,
+} from "./features/mainMenu.js";
 import { registerMealLogging } from "./features/mealLogging.js";
 import { onboardingConversation } from "./features/onboarding.js";
 import { registerReports } from "./features/reports.js";
@@ -26,23 +31,17 @@ bot.command("start", async (ctx) => {
 
 bot.command("reset", async (ctx) => {
   if (!ctx.from) return;
-  const deleted = deleteProfile(db, ctx.from.id);
-  await ctx.reply(
-    deleted
-      ? "Профиль удалён. Отправьте /start, чтобы пройти анкету заново."
-      : "У вас пока нет профиля — отправьте /start, чтобы пройти анкету.",
-  );
+  await ctx.reply("Точно удалить профиль и начать анкету заново?", {
+    reply_markup: resetConfirmKeyboard(),
+  });
 });
 
 bot.command("help", async (ctx) => {
-  await ctx.reply(
-    "Доступные команды:\n/today — сводка приёмов пищи за сегодня\n" +
-      "/start — пройти анкету заново и пересчитать норму\n" +
-      "/reset — удалить профиль (сбросить анкету)\n/help — этот список",
-  );
+  await ctx.reply(HELP_TEXT, { reply_markup: mainKeyboard });
 });
 
 registerReports(bot, db);
+registerMainMenu(bot, db);
 registerMealLogging(bot, db);
 
 bot

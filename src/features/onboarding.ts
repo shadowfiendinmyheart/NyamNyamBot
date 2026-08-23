@@ -4,6 +4,7 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
 import { upsertProfile } from "../db/profiles.js";
+import { mainKeyboard } from "./mainMenu.js";
 import {
   calculateDailyTargets,
   type ActivityLevel,
@@ -142,6 +143,6 @@ export function onboardingConversation(db: Db) {
       "Присылайте фото еды или опишите текстом, что съели.",
     ];
 
-    await ctx.reply(parts.join("\n"));
+    await ctx.reply(parts.join("\n"), { reply_markup: mainKeyboard });
   };
 }

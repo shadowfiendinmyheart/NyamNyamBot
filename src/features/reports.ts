@@ -114,13 +114,17 @@ export function buildTodayReport(
   return parts.join("\n");
 }
 
+export async function sendTodayReport(ctx: MyContext, db: Db): Promise<void> {
+  if (!ctx.from) return;
+
+  const { start, end } = getTodayBoundsUtc(new Date(), config.defaultTimezone);
+  const meals = getMealsForUserOnDate(db, ctx.from.id, start, end);
+  const profile = getProfileByUserId(db, ctx.from.id);
+  await ctx.reply(buildTodayReport(meals, config.defaultTimezone, profile));
+}
+
 export function registerReports(bot: Bot<MyContext>, db: Db): void {
   bot.command("today", async (ctx) => {
-    if (!ctx.from) return;
-
-    const { start, end } = getTodayBoundsUtc(new Date(), config.defaultTimezone);
-    const meals = getMealsForUserOnDate(db, ctx.from.id, start, end);
-    const profile = getProfileByUserId(db, ctx.from.id);
-    await ctx.reply(buildTodayReport(meals, config.defaultTimezone, profile));
+    await sendTodayReport(ctx, db);
   });
 }

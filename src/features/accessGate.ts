@@ -4,6 +4,7 @@ import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
 import type { MyContext } from "../context.js";
 import { createUser, getUserByTelegramId } from "../db/users.js";
+import { mainKeyboard } from "./mainMenu.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
@@ -36,7 +37,10 @@ export function createAccessGate(db: Db): MiddlewareFn<MyContext> {
       return;
     }
 
-    await ctx.reply("Добро пожаловать! Давайте настроим профиль, чтобы посчитать вашу дневную норму.");
+    await ctx.reply(
+      "Добро пожаловать! Давайте настроим профиль, чтобы посчитать вашу дневную норму.",
+      { reply_markup: mainKeyboard },
+    );
     await ctx.conversation.enter("onboarding");
   };
 }
