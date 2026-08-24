@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
+import { FoodAnalyzerError } from "../ai/foodAnalyzer.js";
 import type { AnalyzeFoodInput, AnalyzeFoodResult, FoodItem } from "../ai/foodAnalyzer.js";
 import { FOOD_ANALYSIS_TOOL, SYSTEM_PROMPT } from "./prompts.js";
 
@@ -57,14 +58,18 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
     content.push({ type: "text", text: input.text });
   }
 
-  const response = await getClient().messages.create({
-    model: config.anthropicModel,
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    tools: [FOOD_ANALYSIS_TOOL],
-    tool_choice: { type: "tool", name: FOOD_ANALYSIS_TOOL.name },
-    messages: [{ role: "user", content }],
-  });
+  const response = await getClient()
+    .messages.create({
+      model: config.anthropicModel,
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      tools: [FOOD_ANALYSIS_TOOL],
+      tool_choice: { type: "tool", name: FOOD_ANALYSIS_TOOL.name },
+      messages: [{ role: "user", content }],
+    })
+    .catch((err: unknown) => {
+      throw toFoodAnalyzerError(err);
+    });
 
   const toolUse = response.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
@@ -111,4 +116,27 @@ function mapItem(item: AnalyzeFoodToolItem): FoodItem {
 
 function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+// Прокси (ANTHROPIC_BASE_URL) время от времени не укладывается в свой собственный
+// Cloudflare-таймаут на медленных vision-запросах (524 и подобные) — это внешняя
+// перегрузка, а не баг в коде, и такие ошибки стоит явно помечать как временные,
+// чтобы пользователь получил внятное "попробуйте чуть позже", а не сырой stack trace.
+function toFoodAnalyzerError(err: unknown): FoodAnalyzerError {
+  if (err instanceof Anthropic.APIConnectionError || err instanceof Anthropic.RateLimitError) {
+    return new FoodAnalyzerError(
+      "Сервис распознавания еды сейчас перегружен или недоступен. Попробуйте отправить фото ещё раз через пару минут.",
+      { retryable: true, cause: err },
+    );
+  }
+  if (err instanceof Anthropic.APIError && (err.status === undefined || err.status >= 500)) {
+    return new FoodAnalyzerError(
+      "Сервис распознавания еды не успел ответить вовремя (перегружен). Попробуйте отправить фото ещё раз через пару минут.",
+      { retryable: true, cause: err },
+    );
+  }
+  return new FoodAnalyzerError(
+    "Не получилось получить ответ от сервиса распознавания еды. Попробуйте другое фото или описание.",
+    { retryable: false, cause: err },
+  );
 }

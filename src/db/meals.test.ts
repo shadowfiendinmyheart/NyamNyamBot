@@ -5,7 +5,13 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as schema from "./schema.js";
 import { createUser } from "./users.js";
-import { createMeal, deleteMealForUser, getMealsForUserOnDate } from "./meals.js";
+import {
+  createMeal,
+  deleteMealForUser,
+  getMealById,
+  getMealsForUserOnDate,
+  updateMeal,
+} from "./meals.js";
 
 function makeDb() {
   const sqlite = new Database(":memory:");
@@ -71,6 +77,100 @@ describe("db/meals", () => {
       .where(eq(schema.mealItems.mealId, mealId))
       .all();
     expect(items).toHaveLength(0);
+  });
+});
+
+describe("db/meals getMealById", () => {
+  let db: ReturnType<typeof makeDb>;
+
+  beforeEach(() => {
+    db = makeDb();
+    createUser(db, 1, "alice");
+    createUser(db, 2, "bob");
+  });
+
+  it("returns the meal for its owning user", () => {
+    const mealId = createMeal(db, {
+      userId: 1,
+      mealType: "snack",
+      source: "text",
+      description: "яблоко",
+      items: [{ name: "яблоко", weightG: 150, kcal: 80, proteinG: 0.4, fatG: 0.2, carbG: 19 }],
+    });
+
+    const meal = getMealById(db, mealId, 1);
+    expect(meal?.id).toBe(mealId);
+  });
+
+  it("returns undefined for a different user or a nonexistent meal", () => {
+    const mealId = createMeal(db, {
+      userId: 1,
+      mealType: "snack",
+      source: "text",
+      description: "яблоко",
+      items: [{ name: "яблоко", weightG: 150, kcal: 80, proteinG: 0.4, fatG: 0.2, carbG: 19 }],
+    });
+
+    expect(getMealById(db, mealId, 2)).toBeUndefined();
+    expect(getMealById(db, mealId + 1000, 1)).toBeUndefined();
+  });
+});
+
+describe("db/meals updateMeal", () => {
+  let db: ReturnType<typeof makeDb>;
+
+  beforeEach(() => {
+    db = makeDb();
+    createUser(db, 1, "alice");
+    createUser(db, 2, "bob");
+  });
+
+  it("recomputes totals and replaces meal_items", () => {
+    const mealId = createMeal(db, {
+      userId: 1,
+      mealType: "lunch",
+      source: "text",
+      description: "гречка",
+      items: [{ name: "гречка", weightG: 200, kcal: 220, proteinG: 6.5, fatG: 2.1, carbG: 41.3 }],
+    });
+
+    const updated = updateMeal(db, mealId, 1, {
+      items: [
+        { name: "гречка", weightG: 300, kcal: 330, proteinG: 9.75, fatG: 3.15, carbG: 61.95 },
+      ],
+      rawClaudeResponse: { foodDetected: true, items: [], notes: null },
+    });
+    expect(updated).toBe(true);
+
+    const meal = getMealById(db, mealId, 1);
+    expect(meal?.kcal).toBe(330);
+    expect(meal?.proteinG).toBeCloseTo(9.8, 5);
+
+    const items = db
+      .select()
+      .from(schema.mealItems)
+      .where(eq(schema.mealItems.mealId, mealId))
+      .all();
+    expect(items).toHaveLength(1);
+    expect(items[0]?.weightG).toBe(300);
+  });
+
+  it("returns false and leaves the meal untouched for the wrong user", () => {
+    const mealId = createMeal(db, {
+      userId: 1,
+      mealType: "lunch",
+      source: "text",
+      description: "гречка",
+      items: [{ name: "гречка", weightG: 200, kcal: 220, proteinG: 6.5, fatG: 2.1, carbG: 41.3 }],
+    });
+
+    const updated = updateMeal(db, mealId, 2, {
+      items: [{ name: "рис", weightG: 100, kcal: 130, proteinG: 2.7, fatG: 0.3, carbG: 28 }],
+    });
+    expect(updated).toBe(false);
+
+    const meal = getMealById(db, mealId, 1);
+    expect(meal?.kcal).toBe(220);
   });
 });
 

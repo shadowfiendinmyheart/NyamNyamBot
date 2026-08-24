@@ -23,6 +23,19 @@ export interface AnalyzeFoodResult {
 
 export type FoodAnalyzer = (input: AnalyzeFoodInput) => Promise<AnalyzeFoodResult>;
 
+// Провайдер-независимая ошибка анализа еды: reply-текст для пользователя уже готов
+// на русском, а `retryable` подсказывает, стоит ли предложить повторить попытку.
+// Позволяет остальному коду не знать про конкретные классы ошибок Anthropic SDK.
+export class FoodAnalyzerError extends Error {
+  readonly retryable: boolean;
+
+  constructor(message: string, options: { retryable: boolean; cause?: unknown }) {
+    super(message, { cause: options.cause });
+    this.name = "FoodAnalyzerError";
+    this.retryable = options.retryable;
+  }
+}
+
 // Единственная точка переключения провайдера ИИ: остальной код зовёт analyzeFood
 // отсюда, а не из ../claude/analyzeFood.js напрямую. Чтобы сменить ИИ-API — заменить
 // эту реализацию на новую, реализующую тот же FoodAnalyzer.

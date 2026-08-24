@@ -125,6 +125,58 @@ export function deleteMealForUser(db: Db, mealId: number, userId: number): boole
   return result.changes > 0;
 }
 
+export function getMealById(db: Db, mealId: number, userId: number): MealRow | undefined {
+  return db
+    .select()
+    .from(schema.meals)
+    .where(and(eq(schema.meals.id, mealId), eq(schema.meals.userId, userId)))
+    .get();
+}
+
+export interface UpdateMealInput {
+  items: MealItemInput[];
+  rawClaudeResponse?: unknown;
+}
+
+export function updateMeal(
+  db: Db,
+  mealId: number,
+  userId: number,
+  input: UpdateMealInput,
+): boolean {
+  const totals = sumNutrition(input.items);
+
+  return db.transaction((tx) => {
+    const result = tx
+      .update(schema.meals)
+      .set({ ...totals, rawClaudeResponse: input.rawClaudeResponse ?? null })
+      .where(and(eq(schema.meals.id, mealId), eq(schema.meals.userId, userId)))
+      .run();
+
+    if (result.changes === 0) return false;
+
+    tx.delete(schema.mealItems).where(eq(schema.mealItems.mealId, mealId)).run();
+
+    if (input.items.length > 0) {
+      tx.insert(schema.mealItems)
+        .values(
+          input.items.map((item) => ({
+            mealId,
+            name: item.name,
+            weightG: item.weightG,
+            kcal: item.kcal,
+            proteinG: item.proteinG,
+            fatG: item.fatG,
+            carbG: item.carbG,
+          })),
+        )
+        .run();
+    }
+
+    return true;
+  });
+}
+
 function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }

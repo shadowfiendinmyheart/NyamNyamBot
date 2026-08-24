@@ -5,8 +5,19 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
 import type { MyContext } from "../context.js";
-import { analyzeFood, type FoodItem, type ImageMimeType } from "../ai/foodAnalyzer.js";
-import { createMeal, deleteMealForUser, sumNutrition, type MealType } from "../db/meals.js";
+import {
+  analyzeFood,
+  FoodAnalyzerError,
+  type FoodItem,
+  type ImageMimeType,
+} from "../ai/foodAnalyzer.js";
+import {
+  createMeal,
+  deleteMealForUser,
+  sumNutrition,
+  type MealItemInput,
+  type MealType,
+} from "../db/meals.js";
 
 const MIME_BY_EXT: Record<string, ImageMimeType> = {
   ".jpg": "image/jpeg",
@@ -15,7 +26,7 @@ const MIME_BY_EXT: Record<string, ImageMimeType> = {
   ".webp": "image/webp",
 };
 
-function mimeTypeForFilePath(filePath: string): ImageMimeType {
+export function mimeTypeForFilePath(filePath: string): ImageMimeType {
   return MIME_BY_EXT[path.extname(filePath).toLowerCase()] ?? "image/jpeg";
 }
 
@@ -74,8 +85,27 @@ export function buildMealMessage(
   return parts.join("\n");
 }
 
-function deleteKeyboard(mealId: number): InlineKeyboard {
-  return new InlineKeyboard().text("🗑 Удалить", `delete_meal:${mealId}`);
+export function mealActionsKeyboard(mealId: number): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("✏️ Изменить вес", `correct_weight:${mealId}`)
+    .text("✏️ Изменить состав", `correct_items:${mealId}`)
+    .row()
+    .text("🗑 Удалить", `delete_meal:${mealId}`);
+}
+
+export function toMealItemInputs(items: FoodItem[]): MealItemInput[] {
+  return items.map((item) => ({
+    name: item.name,
+    weightG: item.estimatedWeightG,
+    kcal: item.kcal,
+    proteinG: item.proteinG,
+    fatG: item.fatG,
+    carbG: item.carbG,
+  }));
+}
+
+function replyMessageForError(err: unknown, fallback: string): string {
+  return err instanceof FoodAnalyzerError ? err.message : fallback;
 }
 
 export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
@@ -101,23 +131,18 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
         mealType,
         source: "text",
         description: text,
-        items: result.items.map((item) => ({
-          name: item.name,
-          weightG: item.estimatedWeightG,
-          kcal: item.kcal,
-          proteinG: item.proteinG,
-          fatG: item.fatG,
-          carbG: item.carbG,
-        })),
+        items: toMealItemInputs(result.items),
         rawClaudeResponse: result,
       });
 
       await ctx.reply(buildMealMessage(mealType, result.items, result.notes), {
-        reply_markup: deleteKeyboard(mealId),
+        reply_markup: mealActionsKeyboard(mealId),
       });
     } catch (err) {
       console.error("Не удалось обработать текстовое описание еды:", err);
-      await ctx.reply("Не получилось обработать сообщение, попробуйте ещё раз.");
+      await ctx.reply(
+        replyMessageForError(err, "Не получилось обработать сообщение, попробуйте ещё раз."),
+      );
     }
   });
 
@@ -168,23 +193,18 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
         source: "photo",
         photoPath,
         description: caption || result.items.map((item) => item.name).join(", "),
-        items: result.items.map((item) => ({
-          name: item.name,
-          weightG: item.estimatedWeightG,
-          kcal: item.kcal,
-          proteinG: item.proteinG,
-          fatG: item.fatG,
-          carbG: item.carbG,
-        })),
+        items: toMealItemInputs(result.items),
         rawClaudeResponse: result,
       });
 
       await ctx.reply(buildMealMessage(mealType, result.items, result.notes), {
-        reply_markup: deleteKeyboard(mealId),
+        reply_markup: mealActionsKeyboard(mealId),
       });
     } catch (err) {
       console.error("Не удалось обработать фото еды:", err);
-      await ctx.reply("Не получилось обработать фото, попробуйте ещё раз.");
+      await ctx.reply(
+        replyMessageForError(err, "Не получилось обработать фото, попробуйте ещё раз."),
+      );
     }
   });
 

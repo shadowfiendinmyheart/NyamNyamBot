@@ -10,6 +10,7 @@ import {
   registerMainMenu,
   resetConfirmKeyboard,
 } from "./features/mainMenu.js";
+import { correctionConversation, registerCorrection } from "./features/correction.js";
 import { registerMealLogging } from "./features/mealLogging.js";
 import { onboardingConversation } from "./features/onboarding.js";
 import { registerReports } from "./features/reports.js";
@@ -21,8 +22,9 @@ bot.catch((err) => {
 });
 
 bot.use(conversations());
-bot.use(createAccessGate(db));
 bot.use(createConversation(onboardingConversation(db), "onboarding"));
+bot.use(createConversation(correctionConversation(db), "correction"));
+bot.use(createAccessGate(db));
 
 bot.command("start", async (ctx) => {
   if (ctx.conversation.active("onboarding")) return;
@@ -43,6 +45,7 @@ bot.command("help", async (ctx) => {
 registerReports(bot, db);
 registerMainMenu(bot, db);
 registerMealLogging(bot, db);
+registerCorrection(bot, db);
 
 bot
   .start({
