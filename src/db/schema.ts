@@ -9,6 +9,12 @@ export const users = sqliteTable("users", {
     .default(sql`(unixepoch())`),
 });
 
+export const inviteCodes = sqliteTable("invite_codes", {
+  code: text("code").primaryKey(),
+  usedByUserId: integer("used_by_user_id").references(() => users.id),
+  usedAt: integer("used_at", { mode: "timestamp" }),
+});
+
 export const profiles = sqliteTable("profiles", {
   userId: integer("user_id")
     .primaryKey()
@@ -38,7 +44,7 @@ export const meals = sqliteTable("meals", {
   mealType: text("meal_type", {
     enum: ["breakfast", "lunch", "dinner", "snack"],
   }).notNull(),
-  source: text("source", { enum: ["photo", "text"] }).notNull(),
+  source: text("source", { enum: ["photo", "text", "voice"] }).notNull(),
   photoPath: text("photo_path"),
   description: text("description").notNull(),
   kcal: integer("kcal").notNull(),

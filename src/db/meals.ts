@@ -5,7 +5,7 @@ import * as schema from "./schema.js";
 type Db = BetterSQLite3Database<typeof schema>;
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
-export type MealSource = "photo" | "text";
+export type MealSource = "photo" | "text" | "voice";
 
 export interface MealItemInput {
   name: string;

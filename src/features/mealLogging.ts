@@ -11,6 +11,7 @@ import {
   type FoodItem,
   type ImageMimeType,
 } from "../ai/foodAnalyzer.js";
+import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import {
   createMeal,
   deleteMealForUser,
@@ -18,6 +19,7 @@ import {
   type MealItemInput,
   type MealType,
 } from "../db/meals.js";
+import { downloadTelegramFile } from "../utils/telegram.js";
 
 const MIME_BY_EXT: Record<string, ImageMimeType> = {
   ".jpg": "image/jpeg",
@@ -104,8 +106,53 @@ export function toMealItemInputs(items: FoodItem[]): MealItemInput[] {
   }));
 }
 
-function replyMessageForError(err: unknown, fallback: string): string {
+export function replyMessageForError(err: unknown, fallback: string): string {
   return err instanceof FoodAnalyzerError ? err.message : fallback;
+}
+
+export function replyMessageForTranscriberError(err: unknown, fallback: string): string {
+  return err instanceof TranscriberError ? err.message : fallback;
+}
+
+async function logDescribedMeal(
+  db: Db,
+  ctx: MyContext,
+  text: string,
+  source: "text" | "voice",
+): Promise<void> {
+  if (!ctx.from) return;
+
+  const subject = source === "voice" ? "в голосовом сообщении" : "в сообщении";
+
+  try {
+    const result = await analyzeFood({ text });
+    if (!result.foodDetected || result.items.length === 0) {
+      await ctx.reply(
+        `Не получилось распознать еду ${subject}.${result.notes ? ` ${result.notes}` : ""} ` +
+          "Опишите, что съели, или пришлите фото.",
+      );
+      return;
+    }
+
+    const mealType = determineMealType(new Date(), config.defaultTimezone);
+    const mealId = createMeal(db, {
+      userId: ctx.from.id,
+      mealType,
+      source,
+      description: text,
+      items: toMealItemInputs(result.items),
+      rawClaudeResponse: result,
+    });
+
+    await ctx.reply(buildMealMessage(mealType, result.items, result.notes), {
+      reply_markup: mealActionsKeyboard(mealId),
+    });
+  } catch (err) {
+    console.error("Не удалось обработать описание еды:", err);
+    await ctx.reply(
+      replyMessageForError(err, "Не получилось обработать сообщение, попробуйте ещё раз."),
+    );
+  }
 }
 
 export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
@@ -114,35 +161,53 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
     if (!text || text.startsWith("/")) return;
 
     await ctx.replyWithChatAction("typing");
+    await logDescribedMeal(db, ctx, text, "text");
+  });
+
+  bot.on("message:voice", async (ctx) => {
+    await ctx.replyWithChatAction("typing");
 
     try {
-      const result = await analyzeFood({ text });
-      if (!result.foodDetected || result.items.length === 0) {
+      const voice = ctx.message.voice;
+      
+      // Whisper API ограничен 25MB
+      const maxSizeBytes = 25 * 1024 * 1024;
+      if (voice.file_size && voice.file_size > maxSizeBytes) {
         await ctx.reply(
-          `Не получилось распознать еду в сообщении.${result.notes ? ` ${result.notes}` : ""} ` +
-            "Опишите, что съели, или пришлите фото.",
+          "Голосовое сообщение слишком длинное (больше 25MB). Попробуйте записать короче или напишите текстом.",
         );
         return;
       }
 
-      const mealType = determineMealType(new Date(), config.defaultTimezone);
-      const mealId = createMeal(db, {
-        userId: ctx.from.id,
-        mealType,
-        source: "text",
-        description: text,
-        items: toMealItemInputs(result.items),
-        rawClaudeResponse: result,
-      });
+      const file = await ctx.getFile();
+      if (!file.file_path) {
+        throw new Error("Telegram не вернул file_path для голосового сообщения");
+      }
 
-      await ctx.reply(buildMealMessage(mealType, result.items, result.notes), {
-        reply_markup: mealActionsKeyboard(mealId),
-      });
+      const buffer = await downloadTelegramFile(file.file_path);
+
+      let text: string;
+      try {
+        text = await transcribeAudio({
+          audioBuffer: buffer,
+          mimeType: "audio/ogg",
+          filename: path.basename(file.file_path),
+        });
+      } catch (err) {
+        console.error("Не удалось распознать голосовое сообщение:", err);
+        await ctx.reply(
+          replyMessageForTranscriberError(
+            err,
+            "Не получилось распознать голосовое сообщение, попробуйте ещё раз или напишите текстом.",
+          ),
+        );
+        return;
+      }
+
+      await logDescribedMeal(db, ctx, text, "voice");
     } catch (err) {
-      console.error("Не удалось обработать текстовое описание еды:", err);
-      await ctx.reply(
-        replyMessageForError(err, "Не получилось обработать сообщение, попробуйте ещё раз."),
-      );
+      console.error("Не удалось обработать голосовое сообщение:", err);
+      await ctx.reply("Не получилось обработать голосовое сообщение, попробуйте ещё раз.");
     }
   });
 
@@ -158,12 +223,7 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
         throw new Error("Telegram не вернул file_path для фото");
       }
 
-      const fileUrl = `https://api.telegram.org/file/bot${config.botToken}/${file.file_path}`;
-      const response = await fetch(fileUrl);
-      if (!response.ok) {
-        throw new Error(`Не удалось скачать фото из Telegram: ${response.status}`);
-      }
-      const buffer = Buffer.from(await response.arrayBuffer());
+      const buffer = await downloadTelegramFile(file.file_path);
       const mimeType = mimeTypeForFilePath(file.file_path);
       const caption = ctx.message.caption?.trim();
 

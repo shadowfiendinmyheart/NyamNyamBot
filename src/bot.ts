@@ -3,6 +3,7 @@ import { conversations, createConversation } from "@grammyjs/conversations";
 import { config } from "./config.js";
 import type { MyContext } from "./context.js";
 import { db } from "./db/client.js";
+import { syncInviteCodes } from "./db/inviteCodes.js";
 import { createAccessGate } from "./features/accessGate.js";
 import {
   HELP_TEXT,
@@ -14,6 +15,17 @@ import { correctionConversation, registerCorrection } from "./features/correctio
 import { registerMealLogging } from "./features/mealLogging.js";
 import { onboardingConversation } from "./features/onboarding.js";
 import { registerReports } from "./features/reports.js";
+
+try {
+  syncInviteCodes(db, config.inviteCodes);
+} catch (err) {
+  console.error(
+    "Не удалось синхронизировать инвайт-коды — проверьте, что миграции применены " +
+      "(npm run db:migrate):",
+    err,
+  );
+  process.exit(1);
+}
 
 const bot = new Bot<MyContext>(config.botToken);
 

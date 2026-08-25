@@ -1,18 +1,12 @@
 import type { MiddlewareFn } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
-import { config } from "../config.js";
 import type { MyContext } from "../context.js";
-import { createUser, getUserByTelegramId } from "../db/users.js";
+import { redeemInviteCode } from "../db/inviteCodes.js";
+import { getUserByTelegramId } from "../db/users.js";
 import { mainKeyboard } from "./mainMenu.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
-
-function matchesInviteCode(code: string): boolean {
-  return config.inviteCodes.some(
-    (inviteCode) => inviteCode.toLowerCase() === code.toLowerCase(),
-  );
-}
 
 export function createAccessGate(db: Db): MiddlewareFn<MyContext> {
   return async (ctx, next) => {
@@ -24,16 +18,22 @@ export function createAccessGate(db: Db): MiddlewareFn<MyContext> {
     }
 
     const code = (ctx.message?.text ?? ctx.message?.caption)?.trim();
-    if (!code || !matchesInviteCode(code)) {
+    if (!code) {
       await ctx.reply("Для доступа к боту пришлите инвайт-код.");
       return;
     }
 
+    let redeemed: boolean;
     try {
-      createUser(db, ctx.from.id, ctx.from.username);
+      redeemed = redeemInviteCode(db, code, ctx.from.id, ctx.from.username);
     } catch (err) {
       console.error("Не удалось создать пользователя:", err);
       await ctx.reply("Что-то пошло не так, попробуйте ещё раз.");
+      return;
+    }
+
+    if (!redeemed) {
+      await ctx.reply("Неверный или уже использованный инвайт-код.");
       return;
     }
 

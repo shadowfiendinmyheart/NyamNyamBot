@@ -140,7 +140,7 @@ export function onboardingConversation(db: Db) {
       `Б ${targets.proteinGTarget.toFixed(1)} / Ж ${targets.fatGTarget.toFixed(1)} / ` +
         `У ${targets.carbGTarget.toFixed(1)}`,
       "",
-      "Присылайте фото еды или опишите текстом, что съели.",
+      "Присылайте фото еды, опишите текстом или голосовым сообщением, что съели.",
     ];
 
     await ctx.reply(parts.join("\n"), { reply_markup: mainKeyboard });

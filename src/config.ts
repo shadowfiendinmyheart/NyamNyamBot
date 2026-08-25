@@ -23,6 +23,11 @@ export const config = {
   // Пусто/не задано — используется официальный endpoint Anthropic по умолчанию из SDK.
   anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL || undefined,
   anthropicModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-5",
+  // Для распознавания голосовых сообщений (Whisper API) — Claude не принимает аудио
+  // напрямую, поэтому голос сначала расшифровывается в текст через OpenAI.
+  get openaiApiKey(): string {
+    return required("OPENAI_API_KEY");
+  },
   inviteCodes: (process.env.INVITE_CODES ?? "")
     .split(",")
     .map((code) => code.trim())
