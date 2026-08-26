@@ -20,6 +20,7 @@ import {
   type MealType,
 } from "../db/meals.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
+import { withChatAction } from "../utils/chatAction.js";
 
 const MIME_BY_EXT: Record<string, ImageMimeType> = {
   ".jpg": "image/jpeg",
@@ -160,13 +161,12 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
     const text = ctx.message.text.trim();
     if (!text || text.startsWith("/")) return;
 
-    await ctx.replyWithChatAction("typing");
-    await logDescribedMeal(db, ctx, text, "text");
+    await withChatAction(ctx, "typing", async () => {
+      await logDescribedMeal(db, ctx, text, "text");
+    });
   });
 
   bot.on("message:voice", async (ctx) => {
-    await ctx.replyWithChatAction("typing");
-
     try {
       const voice = ctx.message.voice;
       
@@ -179,32 +179,34 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
         return;
       }
 
-      const file = await ctx.getFile();
-      if (!file.file_path) {
-        throw new Error("Telegram не вернул file_path для голосового сообщения");
-      }
+      await withChatAction(ctx, "typing", async () => {
+        const file = await ctx.getFile();
+        if (!file.file_path) {
+          throw new Error("Telegram не вернул file_path для голосового сообщения");
+        }
 
-      const buffer = await downloadTelegramFile(file.file_path);
+        const buffer = await downloadTelegramFile(file.file_path);
 
-      let text: string;
-      try {
-        text = await transcribeAudio({
-          audioBuffer: buffer,
-          mimeType: "audio/ogg",
-          filename: path.basename(file.file_path),
-        });
-      } catch (err) {
-        console.error("Не удалось распознать голосовое сообщение:", err);
-        await ctx.reply(
-          replyMessageForTranscriberError(
-            err,
-            "Не получилось распознать голосовое сообщение, попробуйте ещё раз или напишите текстом.",
-          ),
-        );
-        return;
-      }
+        let text: string;
+        try {
+          text = await transcribeAudio({
+            audioBuffer: buffer,
+            mimeType: "audio/ogg",
+            filename: path.basename(file.file_path),
+          });
+        } catch (err) {
+          console.error("Не удалось распознать голосовое сообщение:", err);
+          await ctx.reply(
+            replyMessageForTranscriberError(
+              err,
+              "Не получилось распознать голосовое сообщение, попробуйте ещё раз или напишите текстом.",
+            ),
+          );
+          return;
+        }
 
-      await logDescribedMeal(db, ctx, text, "voice");
+        await logDescribedMeal(db, ctx, text, "voice");
+      });
     } catch (err) {
       console.error("Не удалось обработать голосовое сообщение:", err);
       await ctx.reply("Не получилось обработать голосовое сообщение, попробуйте ещё раз.");
@@ -212,53 +214,55 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
   });
 
   bot.on("message:photo", async (ctx) => {
-    await ctx.replyWithChatAction("typing");
-
     try {
-      const photo = ctx.message.photo.at(-1);
-      if (!photo) return;
+      console.log(`[${ctx.from.id}] Начало обработки фото в ${new Date().toISOString()}`);
+      await withChatAction(ctx, "typing", async () => {
+        const photo = ctx.message.photo.at(-1);
+        if (!photo) return;
 
-      const file = await ctx.getFile();
-      if (!file.file_path) {
-        throw new Error("Telegram не вернул file_path для фото");
-      }
+        const file = await ctx.getFile();
+        if (!file.file_path) {
+          throw new Error("Telegram не вернул file_path для фото");
+        }
 
-      const buffer = await downloadTelegramFile(file.file_path);
-      const mimeType = mimeTypeForFilePath(file.file_path);
-      const caption = ctx.message.caption?.trim();
+        const buffer = await downloadTelegramFile(file.file_path);
+        const mimeType = mimeTypeForFilePath(file.file_path);
+        const caption = ctx.message.caption?.trim();
 
-      const result = await analyzeFood({
-        imageBase64: buffer.toString("base64"),
-        mimeType,
-        text: caption || undefined,
-      });
-      if (!result.foodDetected || result.items.length === 0) {
-        await ctx.reply(
-          `Не получилось распознать еду на фото.${result.notes ? ` ${result.notes}` : ""} ` +
-            "Пришлите другое фото или опишите текстом.",
+        const result = await analyzeFood({
+          imageBase64: buffer.toString("base64"),
+          mimeType,
+          text: caption || undefined,
+        });
+        if (!result.foodDetected || result.items.length === 0) {
+          await ctx.reply(
+            `Не получилось распознать еду на фото.${result.notes ? ` ${result.notes}` : ""} ` +
+              "Пришлите другое фото или опишите текстом.",
+          );
+          return;
+        }
+
+        const photoPath = path.join(
+          config.photosDir,
+          `${ctx.from.id}_${Date.now()}${extensionForMimeType(mimeType)}`,
         );
-        return;
-      }
+        await fs.writeFile(photoPath, buffer);
 
-      const photoPath = path.join(
-        config.photosDir,
-        `${ctx.from.id}_${Date.now()}${extensionForMimeType(mimeType)}`,
-      );
-      await fs.writeFile(photoPath, buffer);
+        const mealType = determineMealType(new Date(), config.defaultTimezone);
+        const mealId = createMeal(db, {
+          userId: ctx.from.id,
+          mealType,
+          source: "photo",
+          photoPath,
+          description: caption || result.items.map((item) => item.name).join(", "),
+          items: toMealItemInputs(result.items),
+          rawClaudeResponse: result,
+        });
 
-      const mealType = determineMealType(new Date(), config.defaultTimezone);
-      const mealId = createMeal(db, {
-        userId: ctx.from.id,
-        mealType,
-        source: "photo",
-        photoPath,
-        description: caption || result.items.map((item) => item.name).join(", "),
-        items: toMealItemInputs(result.items),
-        rawClaudeResponse: result,
-      });
-
-      await ctx.reply(buildMealMessage(mealType, result.items, result.notes), {
-        reply_markup: mealActionsKeyboard(mealId),
+        await ctx.reply(buildMealMessage(mealType, result.items, result.notes), {
+          reply_markup: mealActionsKeyboard(mealId),
+        });
+        console.log(`[${ctx.from.id}] Фото обработано успешно в ${new Date().toISOString()}`);
       });
     } catch (err) {
       console.error("Не удалось обработать фото еды:", err);

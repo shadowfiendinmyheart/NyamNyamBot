@@ -14,7 +14,7 @@ function getClient(): Anthropic {
     // User-Agent SDK ("Anthropic/JS ...") блокируется файрволом прокси (Cloudflare
     // 403 "Your request was blocked") — с прямым api.anthropic.com такой проблемы нет.
     ...(config.anthropicBaseUrl
-      ? { defaultHeaders: { "User-Agent": "food-calculator-bot/1.0" } }
+      ? { defaultHeaders: { "User-Agent": "food-calculator-bot/1.0", "Authorization": `Bearer ${config.anthropicApiKey}` } }
       : {}),
   });
   return client;
