@@ -205,7 +205,11 @@ export function correctionConversation(db: Db) {
       }
     });
 
-    await ctx.reply("✅ Обновил запись.");
+    // Исходное сообщение может быть далеко вверху чата — присылаем обновлённую запись
+    // отдельным сообщением с теми же кнопками, чтобы результат был виден сразу.
+    await ctx.reply(`✅ Обновил запись:\n\n${messageText}`, {
+      reply_markup: mealActionsKeyboard(mealId),
+    });
   };
 }
 
