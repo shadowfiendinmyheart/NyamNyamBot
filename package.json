@@ -11,7 +11,12 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "analyze:manual": "tsx scripts/analyzeFoodManual.ts",
     "reset:profile": "tsx scripts/resetProfile.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:restart": "docker compose restart bot",
+    "docker:logs": "docker compose logs -f bot",
+    "docker:ps": "docker compose ps"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

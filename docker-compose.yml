@@ -1,0 +1,13 @@
+services:
+  bot:
+    build: .
+    container_name: food-calculator-bot
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    environment:
+      # Пути внутри контейнера фиксированы — не зависят от значений в .env.
+      DB_PATH: /app/data/db.sqlite
+      PHOTOS_DIR: /app/data/photos
+    volumes:
+      - ./data:/app/data

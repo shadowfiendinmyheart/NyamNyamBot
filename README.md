@@ -33,6 +33,33 @@ npm run db:migrate
 npm run dev             # long polling локально
 ```
 
+## Запуск через Docker (в т.ч. Windows 11)
+
+Нужен только [Docker Desktop](https://www.docker.com/products/docker-desktop/) с
+бэкендом WSL 2 — Node.js ставить не надо, `better-sqlite3` собирается внутри образа под
+Linux.
+
+```powershell
+git clone <repo> food-calculator
+cd food-calculator
+copy .env.example .env      # заполнить BOT_TOKEN, ключи API, INVITE_CODES
+docker compose up -d --build
+docker compose logs -f bot  # смотреть логи
+```
+
+- Миграции БД применяются автоматически при каждом старте контейнера.
+- БД и фото хранятся в `data\` рядом с проектом (монтируется в контейнер как
+  `/app/data`). Чтобы перенести существующие данные — скопируйте `data/db.sqlite`
+  с другой машины в `data\` до запуска.
+- `DB_PATH` и `PHOTOS_DIR` из `.env` в контейнере игнорируются — пути задаются в
+  `docker-compose.yml`.
+- Обновление после `git pull`: `docker compose up -d --build`. Остановка:
+  `docker compose down`.
+- Если установлен Node.js, те же команды есть как npm-скрипты: `npm run docker:up`
+  (сборка + запуск), `docker:down`, `docker:restart`, `docker:logs`, `docker:ps`.
+- Бот должен работать в одном экземпляре на токен: если он уже запущен локально
+  (`npm run dev`) или на другой машине, Telegram вернёт ошибку 409 Conflict.
+
 ## Переменные окружения (`.env`)
 
 | Переменная             | Назначение                                      | Дефолт              |
