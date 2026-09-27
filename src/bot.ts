@@ -8,12 +8,15 @@ import { createAccessGate } from "./features/accessGate.js";
 import {
   HELP_TEXT,
   mainKeyboard,
+  profileKeyboard,
   registerMainMenu,
   resetConfirmKeyboard,
 } from "./features/mainMenu.js";
 import { correctionConversation, registerCorrection } from "./features/correction.js";
 import { registerMealLogging } from "./features/mealLogging.js";
 import { onboardingConversation } from "./features/onboarding.js";
+import { buildProfileMessage } from "./features/profile.js";
+import { getProfileByUserId } from "./db/profiles.js";
 import { registerReports } from "./features/reports.js";
 
 try {
@@ -48,6 +51,12 @@ bot.command("reset", async (ctx) => {
   await ctx.reply("Точно удалить профиль и начать анкету заново?", {
     reply_markup: resetConfirmKeyboard(),
   });
+});
+
+bot.command("profile", async (ctx) => {
+  if (!ctx.from) return;
+  const profile = getProfileByUserId(db, ctx.from.id);
+  await ctx.reply(buildProfileMessage(profile), { reply_markup: profileKeyboard() });
 });
 
 bot.command("help", async (ctx) => {

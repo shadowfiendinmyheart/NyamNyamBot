@@ -5,28 +5,11 @@ import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
 import { upsertProfile } from "../db/profiles.js";
 import { mainKeyboard } from "./mainMenu.js";
-import {
-  calculateDailyTargets,
-  type ActivityLevel,
-  type Goal,
-  type Sex,
-} from "../nutrition/calculations.js";
+import { ACTIVITY_LABEL, GOAL_LABEL, SEX_LABEL } from "./profile.js";
+import { calculateDailyTargets } from "../nutrition/calculations.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 type MyConversation = Conversation<MyContext>;
-
-const SEX_LABEL: Record<Sex, string> = {
-  male: "Мужской",
-  female: "Женский",
-};
-
-const ACTIVITY_LABEL: Record<ActivityLevel, string> = {
-  sedentary: "Сидячий",
-  light: "Лёгкая",
-  moderate: "Средняя",
-  active: "Высокая",
-  very_active: "Очень высокая",
-};
 
 const ACTIVITY_QUESTION = [
   "Какой у вас уровень активности?",
@@ -37,12 +20,6 @@ const ACTIVITY_QUESTION = [
   "Высокая — тренировки 6-7 раз в неделю",
   "Очень высокая — тяжёлый физический труд или спорт каждый день",
 ].join("\n");
-
-const GOAL_LABEL: Record<Goal, string> = {
-  lose: "Похудение",
-  maintain: "Поддержание веса",
-  gain: "Набор массы",
-};
 
 async function askChoice<T extends string>(
   conversation: MyConversation,

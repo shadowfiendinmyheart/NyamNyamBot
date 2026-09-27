@@ -2,7 +2,8 @@ import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
-import { deleteProfile } from "../db/profiles.js";
+import { deleteProfile, getProfileByUserId } from "../db/profiles.js";
+import { buildProfileMessage } from "./profile.js";
 import { sendTodayReport } from "./reports.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -20,11 +21,13 @@ export const HELP_TEXT = [
   "Пришлите фото еды, опишите текстом или голосовым сообщением, что съели — бот посчитает КБЖУ.",
   "",
   `${TODAY_BUTTON} — сводка приёмов пищи за сегодня`,
-  `${MENU_BUTTON} — анкета, сброс профиля, помощь`,
+  `${MENU_BUTTON} — профиль и норма, анкета, сброс профиля, помощь`,
 ].join("\n");
 
 function menuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
+    .text("👤 Мой профиль", "menu:profile")
+    .row()
     .text("🔄 Пройти анкету заново", "menu:restart")
     .row()
     .text("🗑 Удалить профиль", "menu:reset")
@@ -34,6 +37,13 @@ function menuKeyboard(): InlineKeyboard {
 
 function backKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text("◀️ Назад", "menu:back");
+}
+
+export function profileKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("🔄 Пройти анкету заново", "menu:restart")
+    .row()
+    .text("◀️ Назад", "menu:back");
 }
 
 export function resetConfirmKeyboard(): InlineKeyboard {
@@ -56,6 +66,13 @@ export function registerMainMenu(bot: Bot<MyContext>, db: Db): void {
 
   bot.callbackQuery("menu:help", async (ctx) => {
     await ctx.editMessageText(HELP_TEXT, { reply_markup: backKeyboard() });
+    await ctx.answerCallbackQuery();
+  });
+
+  bot.callbackQuery("menu:profile", async (ctx) => {
+    if (!ctx.from) return;
+    const profile = getProfileByUserId(db, ctx.from.id);
+    await ctx.editMessageText(buildProfileMessage(profile), { reply_markup: profileKeyboard() });
     await ctx.answerCallbackQuery();
   });
 
