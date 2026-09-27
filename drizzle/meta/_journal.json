@@ -22,6 +22,20 @@
       "when": 1787590574268,
       "tag": "0002_add_invite_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790508322697,
+      "tag": "0003_drop_photo_path",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790508414999,
+      "tag": "0004_add_telegram_file_id",
+      "breakpoints": true
     }
   ]
 }

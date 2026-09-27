@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import type { Conversation } from "@grammyjs/conversations";
 import { Bot, type Context } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
@@ -146,14 +145,22 @@ export function correctionConversation(db: Db) {
     const previous = await conversation.external(() => extractPreviousResult(db, meal));
     const prompt = buildCorrectionPrompt(previous, mode, userText);
 
+    // Фото не храним у себя — при коррекции заново скачиваем его из Telegram по file_id.
+    // Если не получилось, пересчитываем только по тексту предыдущей оценки.
     let imageInput: { imageBase64: string; mimeType: ImageMimeType } | undefined;
-    if (meal.source === "photo" && meal.photoPath) {
-      const photoPath = meal.photoPath;
+    if (meal.source === "photo" && meal.telegramFileId) {
+      const fileId = meal.telegramFileId;
       imageInput = await conversation.external(async () => {
         try {
-          const buf = await fs.readFile(photoPath);
-          return { imageBase64: buf.toString("base64"), mimeType: mimeTypeForFilePath(photoPath) };
-        } catch {
+          const file = await ctx.api.getFile(fileId);
+          if (!file.file_path) return undefined;
+          const buf = await downloadTelegramFile(file.file_path);
+          return {
+            imageBase64: buf.toString("base64"),
+            mimeType: mimeTypeForFilePath(file.file_path),
+          };
+        } catch (err) {
+          console.error("Не удалось скачать фото из Telegram для коррекции:", err);
           return undefined;
         }
       });

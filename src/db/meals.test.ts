@@ -56,6 +56,19 @@ describe("db/meals", () => {
     expect(items).toHaveLength(2);
   });
 
+  it("stores the Telegram file_id of a photo meal", () => {
+    const mealId = createMeal(db, {
+      userId: 1,
+      mealType: "dinner",
+      source: "photo",
+      telegramFileId: "AgACAgIAAxkBAAIB",
+      description: "паста",
+      items: [{ name: "паста", weightG: 300, kcal: 450, proteinG: 15, fatG: 10, carbG: 70 }],
+    });
+
+    expect(getMealById(db, mealId, 1)?.telegramFileId).toBe("AgACAgIAAxkBAAIB");
+  });
+
   it("deletes a meal (and its items via cascade) only for the owning user", () => {
     const mealId = createMeal(db, {
       userId: 1,

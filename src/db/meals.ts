@@ -20,8 +20,8 @@ export interface CreateMealInput {
   userId: number;
   mealType: MealType;
   source: MealSource;
+  telegramFileId?: string | null;
   description: string;
-  photoPath?: string | null;
   items: MealItemInput[];
   rawClaudeResponse?: unknown;
 }
@@ -66,7 +66,7 @@ export function createMeal(db: Db, input: CreateMealInput): number {
         userId: input.userId,
         mealType: input.mealType,
         source: input.source,
-        photoPath: input.photoPath ?? null,
+        telegramFileId: input.telegramFileId ?? null,
         description: input.description,
         kcal: totals.kcal,
         proteinG: totals.proteinG,

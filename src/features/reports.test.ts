@@ -25,7 +25,7 @@ describe("features/reports buildTodayReport", () => {
     loggedAt: new Date("2026-08-23T06:15:00Z"),
     mealType: "breakfast",
     source: "text",
-    photoPath: null,
+    telegramFileId: null,
     description: "овсянка с бананом",
     kcal: 320,
     proteinG: 12,

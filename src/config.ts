@@ -33,7 +33,5 @@ export const config = {
     .map((code) => code.trim())
     .filter(Boolean),
   dbPath: process.env.DB_PATH ?? "./data/db.sqlite",
-  photosDir: process.env.PHOTOS_DIR ?? "./data/photos",
-  photoRetentionDays: Number(process.env.PHOTO_RETENTION_DAYS ?? "30"),
   defaultTimezone: process.env.DEFAULT_TIMEZONE ?? "Europe/Moscow",
 };

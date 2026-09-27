@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { Bot, InlineKeyboard } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
@@ -31,10 +30,6 @@ const MIME_BY_EXT: Record<string, ImageMimeType> = {
 
 export function mimeTypeForFilePath(filePath: string): ImageMimeType {
   return MIME_BY_EXT[path.extname(filePath).toLowerCase()] ?? "image/jpeg";
-}
-
-function extensionForMimeType(mimeType: ImageMimeType): string {
-  return mimeType === "image/png" ? ".png" : mimeType === "image/webp" ? ".webp" : ".jpg";
 }
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -242,18 +237,12 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
           return;
         }
 
-        const photoPath = path.join(
-          config.photosDir,
-          `${ctx.from.id}_${Date.now()}${extensionForMimeType(mimeType)}`,
-        );
-        await fs.writeFile(photoPath, buffer);
-
         const mealType = determineMealType(new Date(), config.defaultTimezone);
         const mealId = createMeal(db, {
           userId: ctx.from.id,
           mealType,
           source: "photo",
-          photoPath,
+          telegramFileId: photo.file_id,
           description: caption || result.items.map((item) => item.name).join(", "),
           items: toMealItemInputs(result.items),
           rawClaudeResponse: result,

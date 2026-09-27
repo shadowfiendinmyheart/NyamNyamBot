@@ -8,6 +8,5 @@ services:
     environment:
       # Пути внутри контейнера фиксированы — не зависят от значений в .env.
       DB_PATH: /app/data/db.sqlite
-      PHOTOS_DIR: /app/data/photos
     volumes:
       - ./data:/app/data

@@ -1,0 +1,1 @@
+ALTER TABLE `meals` ADD `telegram_file_id` text;

@@ -6,7 +6,6 @@ import { config } from "../config.js";
 import * as schema from "./schema.js";
 
 fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
-fs.mkdirSync(config.photosDir, { recursive: true });
 
 export const sqlite = new Database(config.dbPath);
 sqlite.pragma("foreign_keys = ON");

@@ -15,7 +15,7 @@ Telegram-бот для подсчёта калорий по фото. Закры
 - `@anthropic-ai/sdk`, модель `claude-sonnet-5` (vision) — распознавание еды, строго
   через tool use / JSON-схему
 - SQLite (`better-sqlite3`) + Drizzle ORM
-- `node-cron` — сводки/напоминания/очистка старых фото (пост-MVP)
+- `node-cron` — сводки/напоминания (пост-MVP)
 - Docker + docker-compose на VPS (пост-MVP)
 
 ## Требования
@@ -48,10 +48,10 @@ docker compose logs -f bot  # смотреть логи
 ```
 
 - Миграции БД применяются автоматически при каждом старте контейнера.
-- БД и фото хранятся в `data\` рядом с проектом (монтируется в контейнер как
+- БД хранится в `data\` рядом с проектом (монтируется в контейнер как
   `/app/data`). Чтобы перенести существующие данные — скопируйте `data/db.sqlite`
   с другой машины в `data\` до запуска.
-- `DB_PATH` и `PHOTOS_DIR` из `.env` в контейнере игнорируются — пути задаются в
+- `DB_PATH` из `.env` в контейнере игнорируется — путь задаётся в
   `docker-compose.yml`.
 - Обновление после `git pull`: `docker compose up -d --build`. Остановка:
   `docker compose down`.
@@ -68,11 +68,9 @@ docker compose logs -f bot  # смотреть логи
 | `ANTHROPIC_API_KEY`     | Ключ Anthropic API                               | обязателен          |
 | `INVITE_CODES`          | Инвайт-коды для доступа, через запятую           | —                   |
 | `DB_PATH`               | Путь к файлу SQLite                              | `./data/db.sqlite`  |
-| `PHOTOS_DIR`            | Каталог для хранения фото                        | `./data/photos`     |
-| `PHOTO_RETENTION_DAYS`  | Сколько дней хранить фото до удаления            | `30`                |
 | `DEFAULT_TIMEZONE`      | Таймзона по умолчанию для новых пользователей    | `Europe/Moscow`     |
 
-Файл БД и фото лежат в `data/` — каталог не коммитится в git (см. `.gitignore`).
+Файл БД лежит в `data/` — каталог не коммитится в git (см. `.gitignore`).
 
 ## Скрипты
 
