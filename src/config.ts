@@ -34,4 +34,6 @@ export const config = {
     .filter(Boolean),
   dbPath: process.env.DB_PATH ?? "./data/db.sqlite",
   defaultTimezone: process.env.DEFAULT_TIMEZONE ?? "Europe/Moscow",
+  // Время вечерней сводки (HH:MM) в DEFAULT_TIMEZONE.
+  eveningSummaryTime: process.env.EVENING_SUMMARY_TIME || "23:30",
 };

@@ -2,6 +2,7 @@ import { Bot } from "grammy";
 import { conversations, createConversation } from "@grammyjs/conversations";
 import { config } from "./config.js";
 import type { MyContext } from "./context.js";
+import { startScheduler } from "./cron/scheduler.js";
 import { db } from "./db/client.js";
 import { syncInviteCodes } from "./db/inviteCodes.js";
 import { createAccessGate } from "./features/accessGate.js";
@@ -75,6 +76,7 @@ bot
   .start({
     onStart: (botInfo) => {
       console.log(`Бот @${botInfo.username} запущен и готов к работе.`);
+      startScheduler(bot.api, db);
     },
   })
   .catch((err) => {

@@ -70,6 +70,7 @@ export function buildTodayReport(
   meals: MealRow[],
   timeZone: string,
   targets?: NutritionTargets,
+  title = "📋 Сегодня",
 ): string {
   if (meals.length === 0) {
     return "Сегодня записей о приёмах пищи пока нет.";
@@ -92,7 +93,7 @@ export function buildTodayReport(
   });
 
   const parts = [
-    "📋 Сегодня",
+    title,
     "",
     ...lines,
     "",
