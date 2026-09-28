@@ -86,7 +86,10 @@ export function buildMealMessage(
 export function mealActionsKeyboard(mealId: number): InlineKeyboard {
   return new InlineKeyboard()
     .text("✏️ Изменить", `correct:${mealId}`)
-    .text("🗑 Удалить", `delete_meal:${mealId}`);
+    .text("🗑 Удалить", `delete_meal:${mealId}`)
+    .row()
+    // Обработчик — в features/coach: текст сообщения с оценкой становится контекстом разговора.
+    .text("💬 Обсудить с Ням-Ням", "coach:discuss");
 }
 
 export function toMealItemInputs(items: FoodItem[]): MealItemInput[] {

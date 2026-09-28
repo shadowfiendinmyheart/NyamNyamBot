@@ -86,7 +86,8 @@ export function registerCoach(
     await exit(ctx);
   });
 
-  // Кнопка под вечерней сводкой / недельным отчётом: текст отчёта становится контекстом.
+  // Кнопка под вечерней сводкой / недельным отчётом / оценкой приёма пищи: текст
+  // сообщения становится контекстом.
   bot.callbackQuery("coach:discuss", async (ctx) => {
     await ctx.answerCallbackQuery();
     store.start(ctx.from.id, ctx.callbackQuery.message?.text);
