@@ -13,11 +13,9 @@ import { downloadTelegramFile } from "../utils/telegram.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 type MyConversation = Conversation<MyContext>;
-type CorrectionMode = "weight" | "composition";
 
 function buildCorrectionPrompt(
   previous: AnalyzeFoodResult,
-  mode: CorrectionMode,
   userText: string,
 ): string {
   const itemsList = previous.items
@@ -28,16 +26,12 @@ function buildCorrectionPrompt(
     )
     .join("\n");
 
-  const instruction =
-    mode === "weight"
-      ? "Пользователь уточняет фактический вес порции (состав продуктов не менялся)."
-      : "Пользователь уточняет состав приёма пищи (изменились продукты и/или их количество).";
-
   return [
     "Ранее ты оценил этот приём пищи так:",
     itemsList,
     "",
-    instruction,
+    "Пользователь уточняет оценку: это может быть фактический вес порции, " +
+      "состав продуктов и/или их количество.",
     `Уточнение пользователя: "${userText}"`,
     "",
     "Пересчитай состав и КБЖУ с учётом этого уточнения и верни ПОЛНЫЙ обновлённый " +
@@ -74,7 +68,6 @@ export function correctionConversation(db: Db) {
     conversation: MyConversation,
     ctx: Context,
     mealId: number,
-    mode: CorrectionMode,
     chatId: number,
     messageId: number,
   ): Promise<void> {
@@ -88,9 +81,7 @@ export function correctionConversation(db: Db) {
     }
 
     await ctx.reply(
-      mode === "weight"
-        ? "Какой был фактический вес порции? Опишите текстом или голосовым сообщением."
-        : "Что нужно изменить в составе? Опишите текстом или голосовым сообщением.",
+      "Что нужно исправить — вес порции или состав? Опишите текстом или голосовым сообщением.",
     );
 
     const response = await conversation.waitFor(["message:text", "message:voice"]);
@@ -143,7 +134,7 @@ export function correctionConversation(db: Db) {
     }
 
     const previous = await conversation.external(() => extractPreviousResult(db, meal));
-    const prompt = buildCorrectionPrompt(previous, mode, userText);
+    const prompt = buildCorrectionPrompt(previous, userText);
 
     // Фото не храним у себя — при коррекции заново скачиваем его из Telegram по file_id.
     // Если не получилось, пересчитываем только по тексту предыдущей оценки.
@@ -214,9 +205,9 @@ export function correctionConversation(db: Db) {
 }
 
 export function registerCorrection(bot: Bot<MyContext>, db: Db): void {
-  bot.callbackQuery(/^correct_(weight|items):(\d+)$/, async (ctx) => {
-    const mode: CorrectionMode = ctx.match[1] === "weight" ? "weight" : "composition";
-    const mealId = Number(ctx.match[2]);
+  // correct_weight/correct_items — старые кнопки в уже отправленных сообщениях.
+  bot.callbackQuery(/^correct(?:_weight|_items)?:(\d+)$/, async (ctx) => {
+    const mealId = Number(ctx.match[1]);
 
     const meal = getMealById(db, mealId, ctx.from.id);
     if (!meal) {
@@ -243,6 +234,6 @@ export function registerCorrection(bot: Bot<MyContext>, db: Db): void {
     }
 
     await ctx.answerCallbackQuery();
-    await ctx.conversation.enter("correction", mealId, mode, chatId, messageId);
+    await ctx.conversation.enter("correction", mealId, chatId, messageId);
   });
 }

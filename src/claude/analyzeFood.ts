@@ -61,11 +61,15 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
   const response = await getClient()
     .messages.create({
       model: config.anthropicModel,
-      max_tokens: 4096,
+      max_tokens: 16000,
       system: SYSTEM_PROMPT,
       tools: [FOOD_ANALYSIS_TOOL],
       tool_choice: { type: "tool", name: FOOD_ANALYSIS_TOOL.name },
       messages: [{ role: "user", content }],
+      // Прокси может подменить модель (например, на claude-opus-4-8) и сам включить
+      // thinking — тогда модель тратит весь max_tokens на рассуждения и не успевает
+      // вызвать analyze_food. Отключаем явно; в типах SDK 0.32 этого поля ещё нет.
+      ...({ thinking: { type: "disabled" } } as object),
     })
     .catch((err: unknown) => {
       throw toFoodAnalyzerError(err);
@@ -74,6 +78,12 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
   const toolUse = response.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
   );
+  if (!toolUse && response.stop_reason === "max_tokens") {
+    throw new FoodAnalyzerError(
+      "Сервис распознавания еды не успел сформировать ответ. Попробуйте ещё раз.",
+      { retryable: true },
+    );
+  }
   if (!toolUse) {
     console.error("DEBUG raw response:", JSON.stringify(response, null, 2));
     throw new Error("Claude не вернул структурированный ответ через analyze_food");

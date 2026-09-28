@@ -85,9 +85,7 @@ export function buildMealMessage(
 
 export function mealActionsKeyboard(mealId: number): InlineKeyboard {
   return new InlineKeyboard()
-    .text("✏️ Изменить вес", `correct_weight:${mealId}`)
-    .text("✏️ Изменить состав", `correct_items:${mealId}`)
-    .row()
+    .text("✏️ Изменить", `correct:${mealId}`)
     .text("🗑 Удалить", `delete_meal:${mealId}`);
 }
 
