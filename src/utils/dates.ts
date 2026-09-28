@@ -31,6 +31,12 @@ export function getZonedYmd(date: Date, timeZone: string): Ymd {
   return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
 }
 
+// Минуты от локальной полуночи: 13:45 → 825.
+export function getZonedMinutesOfDay(date: Date, timeZone: string): number {
+  const parts = zonedParts(date, timeZone, true);
+  return Number(parts.hour) * 60 + Number(parts.minute);
+}
+
 function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
   const parts = zonedParts(date, timeZone, true);
   const asUtc = Date.UTC(

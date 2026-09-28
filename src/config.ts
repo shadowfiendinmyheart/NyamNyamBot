@@ -38,4 +38,8 @@ export const config = {
   eveningSummaryTime: process.env.EVENING_SUMMARY_TIME || "23:30",
   // Время недельного отчёта по воскресеньям (HH:MM) в DEFAULT_TIMEZONE.
   weeklyReportTime: process.env.WEEKLY_REPORT_TIME || "21:00",
+  // Напоминания о пропущенном обеде/ужине. По умолчанию выключены.
+  mealRemindersEnabled: process.env.MEAL_REMINDERS_ENABLED === "true",
+  // Время ежедневной проверки, не пора ли напомнить записать вес (HH:MM, в DEFAULT_TIMEZONE).
+  weightReminderTime: process.env.WEIGHT_REMINDER_TIME || "09:00",
 };

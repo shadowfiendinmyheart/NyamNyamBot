@@ -8,6 +8,7 @@ import { getMealsForUserOnDate, getUserIdsWithMealsBetween } from "../db/meals.j
 import { getProfileByUserId } from "../db/profiles.js";
 import { getWeightEntriesBetween } from "../db/weightLog.js";
 import { coachDiscussKeyboard } from "../features/coach/coach.js";
+import { sendMealReminders, sendWeightReminders } from "./reminders.js";
 import { createCoachDataSource } from "../features/coach/dataSource.js";
 import { buildTodayReport, buildWeeklyReport } from "../features/reports.js";
 import { formatYmd, getTodayBoundsUtc, getWeekBoundsUtc } from "../utils/dates.js";
@@ -134,5 +135,27 @@ export function startScheduler(api: MessageSender, db: Db): void {
       });
     },
     { timezone: timeZone, name: "weekly-report" },
+  );
+
+  if (config.mealRemindersEnabled) {
+    cron.schedule(
+      "*/15 * * * *",
+      () => {
+        sendMealReminders(api, db, new Date(), timeZone).catch((err) => {
+          console.error("Ошибка при рассылке напоминаний о еде:", err);
+        });
+      },
+      { timezone: timeZone, name: "meal-reminders" },
+    );
+  }
+
+  cron.schedule(
+    timeToDailyCron(config.weightReminderTime),
+    () => {
+      sendWeightReminders(api, db, new Date(), timeZone).catch((err) => {
+        console.error("Ошибка при рассылке напоминаний о весе:", err);
+      });
+    },
+    { timezone: timeZone, name: "weight-reminders" },
   );
 }

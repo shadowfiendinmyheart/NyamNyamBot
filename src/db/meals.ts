@@ -192,6 +192,20 @@ export function getUserIdsWithMealsBetween(db: Db, start: Date, end: Date): numb
     .map((row) => row.userId);
 }
 
+// Время всех приёмов пищи всех пользователей за период — для эвристики напоминаний.
+export function getMealTimesBetween(
+  db: Db,
+  start: Date,
+  end: Date,
+): Array<{ userId: number; loggedAt: Date }> {
+  return db
+    .select({ userId: schema.meals.userId, loggedAt: schema.meals.loggedAt })
+    .from(schema.meals)
+    .where(and(gte(schema.meals.loggedAt, start), lt(schema.meals.loggedAt, end)))
+    .orderBy(asc(schema.meals.loggedAt))
+    .all();
+}
+
 export function getMealItemsForMeals(db: Db, mealIds: number[]): MealItemRow[] {
   if (mealIds.length === 0) return [];
   return db
