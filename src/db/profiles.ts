@@ -1,6 +1,12 @@
 import { eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import type { ActivityLevel, Goal, NutritionTargets, Sex } from "../nutrition/calculations.js";
+import {
+  calculateDailyTargets,
+  type ActivityLevel,
+  type Goal,
+  type NutritionTargets,
+  type Sex,
+} from "../nutrition/calculations.js";
 import * as schema from "./schema.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -44,4 +50,43 @@ export function getProfileByUserId(db: Db, userId: number): ProfileRow | undefin
 export function deleteProfile(db: Db, userId: number): boolean {
   const result = db.delete(schema.profiles).where(eq(schema.profiles.userId, userId)).run();
   return result.changes > 0;
+}
+
+export interface ProfileMetricsChanges {
+  weightKg?: number;
+  activityLevel?: ActivityLevel;
+}
+
+export interface ProfileUpdateResult {
+  before: ProfileRow;
+  after: ProfileRow;
+}
+
+// Меняет вес и/или активность и пересчитывает дневную норму по остальным полям анкеты.
+export function updateProfileMetrics(
+  db: Db,
+  userId: number,
+  changes: ProfileMetricsChanges,
+): ProfileUpdateResult | undefined {
+  const before = getProfileByUserId(db, userId);
+  if (!before) return undefined;
+
+  const weightKg = changes.weightKg ?? before.weightKg;
+  const activityLevel = changes.activityLevel ?? before.activityLevel;
+  const targets = calculateDailyTargets({
+    sex: before.sex,
+    age: before.age,
+    heightCm: before.heightCm,
+    weightKg,
+    activityLevel,
+    goal: before.goal,
+  });
+
+  const after: ProfileRow = { ...before, weightKg, activityLevel, ...targets };
+  db.update(schema.profiles)
+    .set({ weightKg, activityLevel, ...targets })
+    .where(eq(schema.profiles.userId, userId))
+    .run();
+
+  return { before, after };
 }

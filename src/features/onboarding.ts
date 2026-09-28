@@ -4,22 +4,13 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
 import { upsertProfile } from "../db/profiles.js";
+import { addWeightEntry } from "../db/weightLog.js";
 import { mainKeyboard } from "./mainMenu.js";
-import { ACTIVITY_LABEL, GOAL_LABEL, SEX_LABEL } from "./profile.js";
+import { ACTIVITY_LABEL, ACTIVITY_QUESTION, GOAL_LABEL, SEX_LABEL } from "./profile.js";
 import { calculateDailyTargets } from "../nutrition/calculations.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 type MyConversation = Conversation<MyContext>;
-
-const ACTIVITY_QUESTION = [
-  "Какой у вас уровень активности?",
-  "",
-  "Сидячий — мало или совсем нет физической активности",
-  "Лёгкая — тренировки 1-3 раза в неделю",
-  "Средняя — тренировки 3-5 раз в неделю",
-  "Высокая — тренировки 6-7 раз в неделю",
-  "Очень высокая — тяжёлый физический труд или спорт каждый день",
-].join("\n");
 
 async function askChoice<T extends string>(
   conversation: MyConversation,
@@ -39,7 +30,7 @@ async function askChoice<T extends string>(
   return response.callbackQuery.data.slice(prefix.length + 1) as T;
 }
 
-async function askNumber(
+export async function askNumber(
   conversation: MyConversation,
   ctx: Context,
   question: string,
@@ -99,14 +90,17 @@ export function onboardingConversation(db: Db) {
     const targets = calculateDailyTargets({ sex, age, heightCm, weightKg, activityLevel, goal });
 
     await conversation.external(() =>
-      upsertProfile(db, userId, {
-        sex,
-        age,
-        heightCm,
-        weightKg,
-        activityLevel,
-        goal,
-        ...targets,
+      db.transaction(() => {
+        upsertProfile(db, userId, {
+          sex,
+          age,
+          heightCm,
+          weightKg,
+          activityLevel,
+          goal,
+          ...targets,
+        });
+        addWeightEntry(db, userId, weightKg);
       }),
     );
 

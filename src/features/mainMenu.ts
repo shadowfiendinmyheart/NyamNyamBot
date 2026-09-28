@@ -21,12 +21,19 @@ export const HELP_TEXT = [
   "Пришлите фото еды, опишите текстом или голосовым сообщением, что съели — бот посчитает КБЖУ.",
   "",
   `${TODAY_BUTTON} — сводка приёмов пищи за сегодня`,
-  `${MENU_BUTTON} — профиль и норма, анкета, сброс профиля, помощь`,
+  `${MENU_BUTTON} — профиль и норма, вес, активность, анкета, сброс профиля, помощь`,
+  "",
+  "/weight 78.5 — записать текущий вес и пересчитать норму",
+  "/activity — изменить уровень активности (например, если начали тренироваться)",
 ].join("\n");
 
 function menuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text("👤 Мой профиль", "menu:profile")
+    .row()
+    .text("⚖️ Записать вес", "menu:weight")
+    .row()
+    .text("🏃 Изменить активность", "menu:activity")
     .row()
     .text("🔄 Пройти анкету заново", "menu:restart")
     .row()
@@ -41,6 +48,9 @@ function backKeyboard(): InlineKeyboard {
 
 export function profileKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
+    .text("⚖️ Записать вес", "menu:weight")
+    .text("🏃 Активность", "menu:activity")
+    .row()
     .text("🔄 Пройти анкету заново", "menu:restart")
     .row()
     .text("◀️ Назад", "menu:back");

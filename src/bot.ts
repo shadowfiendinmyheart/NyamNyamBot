@@ -18,6 +18,7 @@ import { onboardingConversation } from "./features/onboarding.js";
 import { buildProfileMessage } from "./features/profile.js";
 import { getProfileByUserId } from "./db/profiles.js";
 import { registerReports } from "./features/reports.js";
+import { registerWeight, weightConversation } from "./features/weight.js";
 
 try {
   syncInviteCodes(db, config.inviteCodes);
@@ -39,6 +40,7 @@ bot.catch((err) => {
 bot.use(conversations());
 bot.use(createConversation(onboardingConversation(db), "onboarding"));
 bot.use(createConversation(correctionConversation(db), "correction"));
+bot.use(createConversation(weightConversation(db), "weight"));
 bot.use(createAccessGate(db));
 
 bot.command("start", async (ctx) => {
@@ -65,6 +67,7 @@ bot.command("help", async (ctx) => {
 
 registerReports(bot, db);
 registerMainMenu(bot, db);
+registerWeight(bot, db);
 registerMealLogging(bot, db);
 registerCorrection(bot, db);
 

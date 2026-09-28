@@ -67,3 +67,14 @@ export const mealItems = sqliteTable("meal_items", {
   fatG: real("fat_g").notNull(),
   carbG: real("carb_g").notNull(),
 });
+
+export const weightLog = sqliteTable("weight_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  weightKg: real("weight_kg").notNull(),
+  loggedAt: integer("logged_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
