@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema.js";
 import { updateProfileMetrics, type ProfileUpdateResult } from "./profiles.js";
@@ -40,5 +40,25 @@ export function getWeightHistory(db: Db, userId: number, limit: number): WeightL
     .where(eq(schema.weightLog.userId, userId))
     .orderBy(desc(schema.weightLog.loggedAt), desc(schema.weightLog.id))
     .limit(limit)
+    .all();
+}
+
+export function getWeightEntriesBetween(
+  db: Db,
+  userId: number,
+  start: Date,
+  end: Date,
+): WeightLogRow[] {
+  return db
+    .select()
+    .from(schema.weightLog)
+    .where(
+      and(
+        eq(schema.weightLog.userId, userId),
+        gte(schema.weightLog.loggedAt, start),
+        lt(schema.weightLog.loggedAt, end),
+      ),
+    )
+    .orderBy(asc(schema.weightLog.loggedAt), asc(schema.weightLog.id))
     .all();
 }

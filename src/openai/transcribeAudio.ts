@@ -6,7 +6,8 @@ import type { TranscribeAudioInput } from "../ai/transcriber.js";
 let client: OpenAI | undefined;
 
 function getClient(): OpenAI {
-  client ??= new OpenAI({ apiKey: config.openaiApiKey });
+  // Дефолт SDK — 10 минут ожидания и 2 повтора; для голосового сообщения это слишком.
+  client ??= new OpenAI({ apiKey: config.openaiApiKey, timeout: 60_000, maxRetries: 1 });
   return client;
 }
 

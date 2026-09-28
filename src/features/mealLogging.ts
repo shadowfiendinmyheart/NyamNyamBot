@@ -108,6 +108,47 @@ export function replyMessageForTranscriberError(err: unknown, fallback: string):
   return err instanceof TranscriberError ? err.message : fallback;
 }
 
+// Скачивает голосовое сообщение и расшифровывает его в текст. При понятных
+// пользователю проблемах (слишком длинное, не распознано) сам отвечает и возвращает
+// undefined; прочие ошибки пробрасывает.
+export async function transcribeVoiceMessage(ctx: MyContext): Promise<string | undefined> {
+  const voice = ctx.message?.voice;
+  if (!voice) return undefined;
+
+  // Whisper API ограничен 25MB
+  const maxSizeBytes = 25 * 1024 * 1024;
+  if (voice.file_size && voice.file_size > maxSizeBytes) {
+    await ctx.reply(
+      "Голосовое сообщение слишком длинное (больше 25MB). Попробуйте записать короче или напишите текстом.",
+    );
+    return undefined;
+  }
+
+  const file = await ctx.getFile();
+  if (!file.file_path) {
+    throw new Error("Telegram не вернул file_path для голосового сообщения");
+  }
+
+  const buffer = await downloadTelegramFile(file.file_path);
+
+  try {
+    return await transcribeAudio({
+      audioBuffer: buffer,
+      mimeType: "audio/ogg",
+      filename: path.basename(file.file_path),
+    });
+  } catch (err) {
+    console.error("Не удалось распознать голосовое сообщение:", err);
+    await ctx.reply(
+      replyMessageForTranscriberError(
+        err,
+        "Не получилось распознать голосовое сообщение, попробуйте ещё раз или напишите текстом.",
+      ),
+    );
+    return undefined;
+  }
+}
+
 async function logDescribedMeal(
   db: Db,
   ctx: MyContext,
@@ -161,43 +202,9 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
 
   bot.on("message:voice", async (ctx) => {
     try {
-      const voice = ctx.message.voice;
-      
-      // Whisper API ограничен 25MB
-      const maxSizeBytes = 25 * 1024 * 1024;
-      if (voice.file_size && voice.file_size > maxSizeBytes) {
-        await ctx.reply(
-          "Голосовое сообщение слишком длинное (больше 25MB). Попробуйте записать короче или напишите текстом.",
-        );
-        return;
-      }
-
       await withChatAction(ctx, "typing", async () => {
-        const file = await ctx.getFile();
-        if (!file.file_path) {
-          throw new Error("Telegram не вернул file_path для голосового сообщения");
-        }
-
-        const buffer = await downloadTelegramFile(file.file_path);
-
-        let text: string;
-        try {
-          text = await transcribeAudio({
-            audioBuffer: buffer,
-            mimeType: "audio/ogg",
-            filename: path.basename(file.file_path),
-          });
-        } catch (err) {
-          console.error("Не удалось распознать голосовое сообщение:", err);
-          await ctx.reply(
-            replyMessageForTranscriberError(
-              err,
-              "Не получилось распознать голосовое сообщение, попробуйте ещё раз или напишите текстом.",
-            ),
-          );
-          return;
-        }
-
+        const text = await transcribeVoiceMessage(ctx);
+        if (text === undefined) return;
         await logDescribedMeal(db, ctx, text, "voice");
       });
     } catch (err) {

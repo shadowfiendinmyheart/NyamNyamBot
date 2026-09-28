@@ -22,6 +22,7 @@
     "@anthropic-ai/sdk": "^0.32.1",
     "@grammyjs/conversations": "^2.0.1",
     "@grammyjs/parse-mode": "^1.10.0",
+    "@grammyjs/runner": "^2.0.3",
     "better-sqlite3": "^11.5.0",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.36.4",

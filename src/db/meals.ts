@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema.js";
 
@@ -34,6 +34,7 @@ export interface NutritionTotals {
 }
 
 export type MealRow = typeof schema.meals.$inferSelect;
+export type MealItemRow = typeof schema.mealItems.$inferSelect;
 
 export function sumNutrition(
   items: Array<{ kcal: number; proteinG: number; fatG: number; carbG: number }>,
@@ -189,4 +190,14 @@ export function getUserIdsWithMealsBetween(db: Db, start: Date, end: Date): numb
     .orderBy(asc(schema.meals.userId))
     .all()
     .map((row) => row.userId);
+}
+
+export function getMealItemsForMeals(db: Db, mealIds: number[]): MealItemRow[] {
+  if (mealIds.length === 0) return [];
+  return db
+    .select()
+    .from(schema.mealItems)
+    .where(inArray(schema.mealItems.mealId, mealIds))
+    .orderBy(asc(schema.mealItems.id))
+    .all();
 }

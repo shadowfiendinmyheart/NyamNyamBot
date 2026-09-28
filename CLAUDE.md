@@ -38,17 +38,25 @@ src/
   ai/
     foodAnalyzer.ts          # контракт (типы + FoodAnalyzer) — остальной код зовёт
                               # analyzeFood отсюда, не из конкретного провайдера
+    coach.ts                  # контракт коуча Ням-Ням: askCoach, commentOnPeriod,
+                              # CoachDataSource (чтение данных пользователя)
   claude/
+    client.ts                 # общий Anthropic-клиент и классификация ошибок API
     analyzeFood.ts           # реализация FoodAnalyzer поверх Anthropic API
     prompts.ts                # системные промпты и tool-схема Claude
+    coach.ts, coachPrompts.ts # коуч: цикл tool use, промпты и инструменты
   features/
     onboarding.ts            # инвайт-код + анкета профиля
     mealLogging.ts            # обработка фото/текста → meal + meal_items
     correction.ts             # inline-кнопки и диалог правки оценки
     reports.ts                 # /today, /week, вечерняя сводка, недельный отчёт
     weight.ts                  # /weight, пересчёт нормы КБЖУ
+    coach/                     # «🐱 Спросить Ням-Ням»: режим разговора (coach.ts),
+                               # сессии в памяти (session.ts), данные для ИИ (dataSource.ts)
   cron/
-    scheduler.ts              # node-cron задачи
+    scheduler.ts              # node-cron: вечерняя сводка и недельный отчёт + комментарий коуча
+  utils/
+    dates.ts                  # границы дня/недели в таймзоне пользователя
   nutrition/
     calculations.ts           # формула Миффлина-Сан Жеора + распределение БЖУ
 docker-compose.yml

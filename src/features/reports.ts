@@ -5,66 +5,13 @@ import { config } from "../config.js";
 import type { MyContext } from "../context.js";
 import { getMealsForUserOnDate, sumNutrition, type MealRow } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
+import type { DaySummary } from "../ai/coach.js";
+import type { WeightLogRow } from "../db/weightLog.js";
 import type { NutritionTargets } from "../nutrition/calculations.js";
+import { getTodayBoundsUtc, parseYmd, weekdayOf } from "../utils/dates.js";
 import { MEAL_TYPE_LABEL } from "./mealLogging.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
-
-function getZonedYmd(date: Date, timeZone: string): { year: number; month: number; day: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .formatToParts(date)
-    .reduce<Record<string, string>>((acc, p) => {
-      if (p.type !== "literal") acc[p.type] = p.value;
-      return acc;
-    }, {});
-  return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
-}
-
-function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  })
-    .formatToParts(date)
-    .reduce<Record<string, string>>((acc, p) => {
-      if (p.type !== "literal") acc[p.type] = p.value;
-      return acc;
-    }, {});
-  const asUtc = Date.UTC(
-    Number(parts.year),
-    Number(parts.month) - 1,
-    Number(parts.day),
-    Number(parts.hour),
-    Number(parts.minute),
-    Number(parts.second),
-  );
-  return asUtc - date.getTime();
-}
-
-function zonedMidnightUtc(year: number, month: number, day: number, timeZone: string): Date {
-  const naiveUtc = Date.UTC(year, month - 1, day, 0, 0, 0);
-  const offsetMs = getTimeZoneOffsetMs(new Date(naiveUtc), timeZone);
-  return new Date(naiveUtc - offsetMs);
-}
-
-export function getTodayBoundsUtc(now: Date, timeZone: string): { start: Date; end: Date } {
-  const { year, month, day } = getZonedYmd(now, timeZone);
-  const start = zonedMidnightUtc(year, month, day, timeZone);
-  const tomorrow = getZonedYmd(new Date(start.getTime() + 24 * 60 * 60 * 1000), timeZone);
-  const end = zonedMidnightUtc(tomorrow.year, tomorrow.month, tomorrow.day, timeZone);
-  return { start, end };
-}
 
 export function buildTodayReport(
   meals: MealRow[],
@@ -110,6 +57,82 @@ export function buildTodayReport(
         ? `Осталось: ${remainingKcal} ккал`
         : `Превышение: ${-remainingKcal} ккал`,
     );
+  }
+
+  return parts.join("\n");
+}
+
+const WEEKDAY_SHORT = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+
+function formatDayLabel(date: string): string {
+  const ymd = parseYmd(date);
+  if (!ymd) return date;
+  const dm = `${String(ymd.day).padStart(2, "0")}.${String(ymd.month).padStart(2, "0")}`;
+  return `${WEEKDAY_SHORT[weekdayOf(ymd)]} ${dm}`;
+}
+
+function formatSignedKg(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  if (rounded === 0) return "без изменений";
+  return `${rounded > 0 ? "+" : "−"}${Math.abs(rounded)} кг`;
+}
+
+// days — все дни недели по порядку (в т.ч. пустые), weights — записи веса за неделю
+// по возрастанию времени.
+export function buildWeeklyReport(
+  days: DaySummary[],
+  targets: NutritionTargets | undefined,
+  weights: Pick<WeightLogRow, "weightKg">[],
+): string {
+  const title =
+    days.length > 0
+      ? `📊 Неделя ${formatDayLabel(days[0].date).slice(3)}–${formatDayLabel(days.at(-1)!.date).slice(3)}`
+      : "📊 Неделя";
+
+  const dayLines = days.map((day) =>
+    day.meals.length > 0
+      ? `• ${formatDayLabel(day.date)} — ${day.totals.kcal} ккал`
+      : `• ${formatDayLabel(day.date)} — нет записей`,
+  );
+
+  const logged = days.filter((day) => day.meals.length > 0);
+  const parts = [title, "", ...dayLines, "", `Дней с записями: ${logged.length} из ${days.length}`];
+
+  if (logged.length > 0) {
+    const sum = sumNutrition(logged.map((day) => day.totals));
+    const avg = {
+      kcal: Math.round(sum.kcal / logged.length),
+      proteinG: sum.proteinG / logged.length,
+      fatG: sum.fatG / logged.length,
+      carbG: sum.carbG / logged.length,
+    };
+    parts.push(
+      `В среднем за день: ${avg.kcal} ккал | Б ${avg.proteinG.toFixed(1)} ` +
+        `Ж ${avg.fatG.toFixed(1)} У ${avg.carbG.toFixed(1)}`,
+    );
+    if (targets) {
+      const diff = avg.kcal - targets.dailyKcalTarget;
+      parts.push(
+        `Норма: ${targets.dailyKcalTarget} ккал | Б ${targets.proteinGTarget.toFixed(1)} ` +
+          `Ж ${targets.fatGTarget.toFixed(1)} У ${targets.carbGTarget.toFixed(1)}`,
+        diff === 0
+          ? "Точно в норму"
+          : diff > 0
+            ? `В среднем выше нормы на ${diff} ккал в день`
+            : `В среднем ниже нормы на ${-diff} ккал в день`,
+      );
+    }
+  }
+
+  parts.push("");
+  if (weights.length === 0) {
+    parts.push("⚖️ Вес за неделю не записывали — /weight");
+  } else if (weights.length === 1) {
+    parts.push(`⚖️ Вес: ${weights[0].weightKg} кг (одна запись за неделю)`);
+  } else {
+    const first = weights[0].weightKg;
+    const last = weights.at(-1)!.weightKg;
+    parts.push(`⚖️ Вес: ${first} → ${last} кг (${formatSignedKg(last - first)})`);
   }
 
   return parts.join("\n");

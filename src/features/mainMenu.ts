@@ -8,12 +8,15 @@ import { sendTodayReport } from "./reports.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
-const TODAY_BUTTON = "📋 Сегодня";
-const MENU_BUTTON = "⚙️ Меню";
+export const TODAY_BUTTON = "📋 Сегодня";
+export const MENU_BUTTON = "⚙️ Меню";
+export const COACH_BUTTON = "🐱 Спросить Ням-Ням";
 
 export const mainKeyboard = new Keyboard()
   .text(TODAY_BUTTON)
   .text(MENU_BUTTON)
+  .row()
+  .text(COACH_BUTTON)
   .resized()
   .persistent();
 
@@ -22,8 +25,10 @@ export const HELP_TEXT = [
   "",
   `${TODAY_BUTTON} — сводка приёмов пищи за сегодня`,
   `${MENU_BUTTON} — профиль и норма, вес, активность, анкета, сброс профиля, помощь`,
+  `${COACH_BUTTON} — личный коуч: питание, тренировки, самочувствие, срывы. ` +
+    "Знает ваш профиль, дневник и вес. /exit — завершить разговор",
   "",
-  "/weight 78.5 — записать текущий вес и пересчитать норму",
+  "/weight — записать текущий вес и пересчитать норму",
   "/activity — изменить уровень активности (например, если начали тренироваться)",
 ].join("\n");
 

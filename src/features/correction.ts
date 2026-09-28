@@ -1,5 +1,5 @@
 import type { Conversation } from "@grammyjs/conversations";
-import { Bot, type Context } from "grammy";
+import { Bot, type Api, type Context } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { eq } from "drizzle-orm";
 import * as schema from "../db/schema.js";
@@ -10,6 +10,8 @@ import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import { getMealById, updateMeal, type MealRow } from "../db/meals.js";
 import { buildMealMessage, mealActionsKeyboard, mimeTypeForFilePath, toMealItemInputs } from "./mealLogging.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
+import { withChatActionVia } from "../utils/chatAction.js";
+import { COACH_BUTTON, MENU_BUTTON, TODAY_BUTTON } from "./mainMenu.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 type MyConversation = Conversation<MyContext>;
@@ -63,7 +65,16 @@ function extractPreviousResult(db: Db, meal: MealRow): AnalyzeFoodResult {
   };
 }
 
-export function correctionConversation(db: Db) {
+// Кнопки главного меню и команды во время правки не должны превращаться в «уточнение» —
+// такое сообщение отменяет правку и обрабатывается как обычно.
+function isCancelInput(text: string): boolean {
+  return (
+    text.startsWith("/") || [TODAY_BUTTON, MENU_BUTTON, COACH_BUTTON].includes(text)
+  );
+}
+
+// api — внешний bot.api: внутри conversation.external нельзя пользоваться ctx диалога.
+export function correctionConversation(db: Db, api: Api) {
   return async function correction(
     conversation: MyConversation,
     ctx: Context,
@@ -81,10 +92,22 @@ export function correctionConversation(db: Db) {
     }
 
     await ctx.reply(
-      "Что нужно исправить — вес порции или состав? Опишите текстом или голосовым сообщением.",
+      "Что нужно исправить — вес порции или состав? Опишите текстом или голосовым " +
+        "сообщением. /cancel — отменить.",
     );
 
-    const response = await conversation.waitFor(["message:text", "message:voice"]);
+    // next: true — прочие обновления (фото, нажатия inline-кнопок) не глотаются
+    // диалогом, а уходят обычным обработчикам.
+    const response = await conversation.waitFor(["message:text", "message:voice"], {
+      next: true,
+    });
+
+    const rawText = response.message.text?.trim();
+    if (rawText && isCancelInput(rawText)) {
+      await response.reply("Правка отменена.");
+      // /cancel обрабатывать больше нечем; остальные команды и кнопки — пропускаем дальше.
+      await conversation.halt({ next: rawText !== "/cancel" });
+    }
 
     let userText: string;
     if (response.message.voice) {
@@ -99,7 +122,7 @@ export function correctionConversation(db: Db) {
         return;
       }
 
-      const voiceFile = await conversation.external(() => response.getFile());
+      const voiceFile = await conversation.external(() => api.getFile(voice.file_id));
       if (!voiceFile.file_path) {
         await response.reply("Не удалось скачать голосовое сообщение, попробуйте ещё раз.");
         return;
@@ -136,30 +159,37 @@ export function correctionConversation(db: Db) {
     const previous = await conversation.external(() => extractPreviousResult(db, meal));
     const prompt = buildCorrectionPrompt(previous, userText);
 
+    await response.reply("⏳ Пересчитываю с учётом уточнения…");
+
     // Фото не храним у себя — при коррекции заново скачиваем его из Telegram по file_id.
     // Если не получилось, пересчитываем только по тексту предыдущей оценки.
-    let imageInput: { imageBase64: string; mimeType: ImageMimeType } | undefined;
-    if (meal.source === "photo" && meal.telegramFileId) {
-      const fileId = meal.telegramFileId;
-      imageInput = await conversation.external(async () => {
-        try {
-          const file = await ctx.api.getFile(fileId);
-          if (!file.file_path) return undefined;
-          const buf = await downloadTelegramFile(file.file_path);
-          return {
-            imageBase64: buf.toString("base64"),
-            mimeType: mimeTypeForFilePath(file.file_path),
-          };
-        } catch (err) {
-          console.error("Не удалось скачать фото из Telegram для коррекции:", err);
-          return undefined;
-        }
-      });
-    }
+    const fileId = meal.source === "photo" ? meal.telegramFileId : null;
+    const downloadImage = async (): Promise<
+      { imageBase64: string; mimeType: ImageMimeType } | undefined
+    > => {
+      if (!fileId) return undefined;
+      try {
+        const file = await api.getFile(fileId);
+        if (!file.file_path) return undefined;
+        const buf = await downloadTelegramFile(file.file_path);
+        return {
+          imageBase64: buf.toString("base64"),
+          mimeType: mimeTypeForFilePath(file.file_path),
+        };
+      } catch (err) {
+        console.error("Не удалось скачать фото из Telegram для коррекции:", err);
+        return undefined;
+      }
+    };
 
     let result: AnalyzeFoodResult;
     try {
-      result = await conversation.external(() => analyzeFood({ text: prompt, ...imageInput }));
+      result = await conversation.external(() =>
+        withChatActionVia(api, chatId, "typing", async () => {
+          const imageInput = await downloadImage();
+          return analyzeFood({ text: prompt, ...imageInput });
+        }),
+      );
     } catch (err) {
       console.error("Не удалось пересчитать приём пищи:", err);
       await ctx.reply("Не получилось пересчитать, попробуйте ещё раз позже.");
@@ -188,7 +218,7 @@ export function correctionConversation(db: Db) {
     const messageText = buildMealMessage(meal.mealType, result.items, result.notes);
     await conversation.external(async () => {
       try {
-        await ctx.api.editMessageText(chatId, messageId, messageText, {
+        await api.editMessageText(chatId, messageId, messageText, {
           reply_markup: mealActionsKeyboard(mealId),
         });
       } catch (err) {
@@ -205,6 +235,12 @@ export function correctionConversation(db: Db) {
 }
 
 export function registerCorrection(bot: Bot<MyContext>, db: Db): void {
+  // Во время правки /cancel перехватывает сам диалог; сюда попадаем, только если
+  // отменять нечего.
+  bot.command("cancel", async (ctx) => {
+    await ctx.reply("Сейчас нечего отменять.");
+  });
+
   // correct_weight/correct_items — старые кнопки в уже отправленных сообщениях.
   bot.callbackQuery(/^correct(?:_weight|_items)?:(\d+)$/, async (ctx) => {
     const mealId = Number(ctx.match[1]);

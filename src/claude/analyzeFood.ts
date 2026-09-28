@@ -1,24 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
+import { classifyApiError, getClient, THINKING_DISABLED } from "./client.js";
 import { FoodAnalyzerError } from "../ai/foodAnalyzer.js";
 import type { AnalyzeFoodInput, AnalyzeFoodResult, FoodItem } from "../ai/foodAnalyzer.js";
 import { FOOD_ANALYSIS_TOOL, SYSTEM_PROMPT } from "./prompts.js";
-
-let client: Anthropic | undefined;
-
-function getClient(): Anthropic {
-  client ??= new Anthropic({
-    apiKey: config.anthropicApiKey,
-    baseURL: config.anthropicBaseUrl,
-    // При работе через сторонний прокси (ANTHROPIC_BASE_URL) официальный
-    // User-Agent SDK ("Anthropic/JS ...") блокируется файрволом прокси (Cloudflare
-    // 403 "Your request was blocked") — с прямым api.anthropic.com такой проблемы нет.
-    ...(config.anthropicBaseUrl
-      ? { defaultHeaders: { "User-Agent": "food-calculator-bot/1.0", "Authorization": `Bearer ${config.anthropicApiKey}` } }
-      : {}),
-  });
-  return client;
-}
 
 interface AnalyzeFoodToolItem {
   name: string;
@@ -66,10 +51,7 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
       tools: [FOOD_ANALYSIS_TOOL],
       tool_choice: { type: "tool", name: FOOD_ANALYSIS_TOOL.name },
       messages: [{ role: "user", content }],
-      // Прокси может подменить модель (например, на claude-opus-4-8) и сам включить
-      // thinking — тогда модель тратит весь max_tokens на рассуждения и не успевает
-      // вызвать analyze_food. Отключаем явно; в типах SDK 0.32 этого поля ещё нет.
-      ...({ thinking: { type: "disabled" } } as object),
+      ...THINKING_DISABLED,
     })
     .catch((err: unknown) => {
       throw toFoodAnalyzerError(err);
@@ -128,25 +110,22 @@ function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-// Прокси (ANTHROPIC_BASE_URL) время от времени не укладывается в свой собственный
-// Cloudflare-таймаут на медленных vision-запросах (524 и подобные) — это внешняя
-// перегрузка, а не баг в коде, и такие ошибки стоит явно помечать как временные,
-// чтобы пользователь получил внятное "попробуйте чуть позже", а не сырой stack trace.
 function toFoodAnalyzerError(err: unknown): FoodAnalyzerError {
-  if (err instanceof Anthropic.APIConnectionError || err instanceof Anthropic.RateLimitError) {
-    return new FoodAnalyzerError(
-      "Сервис распознавания еды сейчас перегружен или недоступен. Попробуйте отправить фото ещё раз через пару минут.",
-      { retryable: true, cause: err },
-    );
+  switch (classifyApiError(err)) {
+    case "unavailable":
+      return new FoodAnalyzerError(
+        "Сервис распознавания еды сейчас перегружен или недоступен. Попробуйте отправить фото ещё раз через пару минут.",
+        { retryable: true, cause: err },
+      );
+    case "timeout":
+      return new FoodAnalyzerError(
+        "Сервис распознавания еды не успел ответить вовремя (перегружен). Попробуйте отправить фото ещё раз через пару минут.",
+        { retryable: true, cause: err },
+      );
+    default:
+      return new FoodAnalyzerError(
+        "Не получилось получить ответ от сервиса распознавания еды. Попробуйте другое фото или описание.",
+        { retryable: false, cause: err },
+      );
   }
-  if (err instanceof Anthropic.APIError && (err.status === undefined || err.status >= 500)) {
-    return new FoodAnalyzerError(
-      "Сервис распознавания еды не успел ответить вовремя (перегружен). Попробуйте отправить фото ещё раз через пару минут.",
-      { retryable: true, cause: err },
-    );
-  }
-  return new FoodAnalyzerError(
-    "Не получилось получить ответ от сервиса распознавания еды. Попробуйте другое фото или описание.",
-    { retryable: false, cause: err },
-  );
 }

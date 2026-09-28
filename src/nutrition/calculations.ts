@@ -40,9 +40,13 @@ export function calculateBmr({ sex, age, heightCm, weightKg }: ProfileInput): nu
   return sex === "male" ? base + 5 : base - 161;
 }
 
+// Суточный расход энергии с учётом активности (без поправки на цель).
+export function calculateTdee(input: ProfileInput): number {
+  return calculateBmr(input) * ACTIVITY_MULTIPLIER[input.activityLevel];
+}
+
 export function calculateDailyTargets(input: ProfileInput): NutritionTargets {
-  const bmr = calculateBmr(input);
-  const tdee = bmr * ACTIVITY_MULTIPLIER[input.activityLevel];
+  const tdee = calculateTdee(input);
   const adjustedKcal = tdee * (1 + GOAL_ADJUSTMENT[input.goal]);
 
   const proteinGTarget = roundToOneDecimal(input.weightKg * PROTEIN_G_PER_KG);

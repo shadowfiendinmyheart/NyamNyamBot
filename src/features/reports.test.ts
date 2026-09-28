@@ -1,22 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildTodayReport, getTodayBoundsUtc } from "./reports.js";
+import { buildTodayReport, buildWeeklyReport } from "./reports.js";
+import type { DaySummary } from "../ai/coach.js";
 import type { MealRow } from "../db/meals.js";
-
-describe("features/reports getTodayBoundsUtc", () => {
-  it("computes UTC bounds for Europe/Moscow (UTC+3), where local midnight falls on the previous UTC day", () => {
-    const now = new Date("2026-08-22T21:30:00Z"); // 2026-08-23T00:30 в Москве
-    const { start, end } = getTodayBoundsUtc(now, "Europe/Moscow");
-    expect(start).toEqual(new Date("2026-08-22T21:00:00Z"));
-    expect(end).toEqual(new Date("2026-08-23T21:00:00Z"));
-  });
-
-  it("computes UTC bounds for a negative-offset zone (America/Los_Angeles, PDT UTC-7)", () => {
-    const now = new Date("2026-08-23T05:00:00Z"); // 2026-08-22T22:00 в Лос-Анджелесе
-    const { start, end } = getTodayBoundsUtc(now, "America/Los_Angeles");
-    expect(start).toEqual(new Date("2026-08-22T07:00:00Z"));
-    expect(end).toEqual(new Date("2026-08-23T07:00:00Z"));
-  });
-});
 
 describe("features/reports buildTodayReport", () => {
   const baseMeal: MealRow = {
@@ -88,5 +73,38 @@ describe("features/reports buildTodayReport", () => {
     });
 
     expect(message).toContain("Превышение: 120 ккал");
+  });
+});
+
+describe("features/reports buildWeeklyReport", () => {
+  const day = (date: string, kcal: number): DaySummary => ({
+    date,
+    totals: { kcal, proteinG: 100, fatG: 60, carbG: 200 },
+    meals:
+      kcal > 0
+        ? [{ time: "12:00", mealType: "lunch", description: "обед", kcal, proteinG: 100, fatG: 60, carbG: 200 }]
+        : [],
+  });
+  const days = [day("2026-09-21", 1800), day("2026-09-22", 0), day("2026-09-23", 2200)];
+
+  it("средние считаются только по дням с записями и сравниваются с нормой", () => {
+    const text = buildWeeklyReport(
+      days,
+      { dailyKcalTarget: 1900, proteinGTarget: 144, fatGTarget: 58, carbGTarget: 200 },
+      [],
+    );
+    expect(text).toContain("📊 Неделя 21.09–23.09");
+    expect(text).toContain("• Пн 21.09 — 1800 ккал");
+    expect(text).toContain("• Вт 22.09 — нет записей");
+    expect(text).toContain("Дней с записями: 2 из 3");
+    expect(text).toContain("В среднем за день: 2000 ккал | Б 100.0 Ж 60.0 У 200.0");
+    expect(text).toContain("В среднем выше нормы на 100 ккал в день");
+    expect(text).toContain("Вес за неделю не записывали");
+  });
+
+  it("без анкеты не показывает норму; одна запись веса", () => {
+    const text = buildWeeklyReport(days, undefined, [{ weightKg: 80 }]);
+    expect(text).not.toContain("Норма");
+    expect(text).toContain("⚖️ Вес: 80 кг (одна запись за неделю)");
   });
 });

@@ -1,4 +1,4 @@
-import type { Context } from "grammy";
+import type { Api, Context } from "grammy";
 
 /**
  * Поддерживает индикатор "печатает..." (или другое действие) в Telegram на протяжении
@@ -13,17 +13,34 @@ import type { Context } from "grammy";
  */
 export async function withChatAction<T>(
   ctx: Context,
-  action: "typing" | "upload_photo" | "record_voice" | "upload_voice",
+  action: ChatAction,
+  asyncFn: () => Promise<T>,
+): Promise<T> {
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return asyncFn();
+  return withChatActionVia(ctx.api, chatId, action, asyncFn);
+}
+
+type ChatAction = "typing" | "upload_photo" | "record_voice" | "upload_voice";
+
+/**
+ * То же, что withChatAction, но через явный Api и chatId — для кода внутри
+ * conversation.external, где нельзя пользоваться ctx диалога.
+ */
+export async function withChatActionVia<T>(
+  api: Api,
+  chatId: number,
+  action: ChatAction,
   asyncFn: () => Promise<T>,
 ): Promise<T> {
   // Отправляем индикатор сразу
-  await ctx.replyWithChatAction(action).catch(() => {
+  await api.sendChatAction(chatId, action).catch(() => {
     // Игнорируем ошибки отправки chat action — не критично
   });
 
   // Обновляем каждые 4 секунды (Telegram показывает действие ~5 секунд)
   const interval = setInterval(() => {
-    ctx.replyWithChatAction(action).catch(() => {
+    api.sendChatAction(chatId, action).catch(() => {
       // Игнорируем ошибки
     });
   }, 4000);

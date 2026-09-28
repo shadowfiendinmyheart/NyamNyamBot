@@ -57,7 +57,11 @@ describe("openai/transcribeAudio", () => {
     const call = createMock.mock.calls[0][0];
     expect(call.model).toBe("whisper-1");
     expect(call.language).toBe("ru");
-    expect(clientConstructorMock).toHaveBeenCalledWith({ apiKey: "test-key" });
+    expect(clientConstructorMock).toHaveBeenCalledWith({
+      apiKey: "test-key",
+      timeout: 60_000,
+      maxRetries: 1,
+    });
   });
 
   it("trims the transcribed text", async () => {

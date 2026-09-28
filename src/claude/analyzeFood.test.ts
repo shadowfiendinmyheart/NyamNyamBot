@@ -66,6 +66,8 @@ describe("claude/analyzeFood", () => {
     expect(clientConstructorMock).toHaveBeenCalledWith({
       apiKey: "test-key",
       baseURL: undefined,
+      timeout: 90_000,
+      maxRetries: 1,
     });
   });
 
