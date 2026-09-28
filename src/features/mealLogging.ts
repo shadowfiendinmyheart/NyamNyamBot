@@ -10,6 +10,7 @@ import {
   type FoodItem,
   type ImageMimeType,
 } from "../ai/foodAnalyzer.js";
+import { analyzeMessage } from "../ai/messageAnalyzer.js";
 import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import {
   createMeal,
@@ -20,6 +21,13 @@ import {
 } from "../db/meals.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
 import { withChatAction } from "../utils/chatAction.js";
+import { replyRecognizedWorkouts, saveRecognizedWorkouts } from "./workout.js";
+import {
+  buildVoiceConfirmMessage,
+  settleVoiceConfirmation,
+  voiceConfirmKeyboard,
+  voiceConfirmPattern,
+} from "./voiceConfirm.js";
 
 const MIME_BY_EXT: Record<string, ImageMimeType> = {
   ".jpg": "image/jpeg",
@@ -163,24 +171,38 @@ async function logDescribedMeal(
   const subject = source === "voice" ? "в голосовом сообщении" : "в сообщении";
 
   try {
-    const result = await analyzeFood({ text });
-    if (!result.foodDetected || result.items.length === 0) {
+    const { food: result, workouts } = await analyzeMessage({ text });
+    const userId = ctx.from.id;
+    const hasFood = result.foodDetected && result.items.length > 0;
+    const mealType = determineMealType(new Date(), config.defaultTimezone);
+
+    // Тренировки и еду пишем одной транзакцией и только потом отвечаем: если запись
+    // упадёт, в дневнике не останется половины сообщения и повтор ничего не задвоит.
+    const { savedWorkouts, mealId } = db.transaction(() => ({
+      savedWorkouts: saveRecognizedWorkouts(db, userId, workouts, source, text),
+      mealId: hasFood
+        ? createMeal(db, {
+            userId,
+            mealType,
+            source,
+            description: text,
+            items: toMealItemInputs(result.items),
+            rawClaudeResponse: result,
+          })
+        : undefined,
+    }));
+
+    if (workouts.length > 0) await replyRecognizedWorkouts(ctx, savedWorkouts);
+
+    if (mealId === undefined) {
+      if (workouts.length > 0) return;
       await ctx.reply(
-        `Не получилось распознать еду ${subject}.${result.notes ? ` ${result.notes}` : ""} ` +
-          "Опишите, что съели, или пришлите фото.",
+        `Не получилось распознать еду или тренировку ${subject}.` +
+          `${result.notes ? ` ${result.notes}` : ""} ` +
+          "Опишите, что съели, или пришлите фото. Тренировку можно записать командой /workout.",
       );
       return;
     }
-
-    const mealType = determineMealType(new Date(), config.defaultTimezone);
-    const mealId = createMeal(db, {
-      userId: ctx.from.id,
-      mealType,
-      source,
-      description: text,
-      items: toMealItemInputs(result.items),
-      rawClaudeResponse: result,
-    });
 
     await ctx.reply(buildMealMessage(mealType, result.items, result.notes), {
       reply_markup: mealActionsKeyboard(mealId),
@@ -208,12 +230,24 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
       await withChatAction(ctx, "typing", async () => {
         const text = await transcribeVoiceMessage(ctx);
         if (text === undefined) return;
-        await logDescribedMeal(db, ctx, text, "voice");
+        await ctx.reply(buildVoiceConfirmMessage(text), {
+          reply_markup: voiceConfirmKeyboard("meal"),
+        });
       });
     } catch (err) {
       console.error("Не удалось обработать голосовое сообщение:", err);
       await ctx.reply("Не получилось обработать голосовое сообщение, попробуйте ещё раз.");
     }
+  });
+
+  bot.callbackQuery(voiceConfirmPattern("meal"), async (ctx) => {
+    const text = await settleVoiceConfirmation(
+      ctx,
+      ctx.match[1] === "yes",
+      "Не записываю. Запишите голосовое ещё раз или напишите текстом.",
+    );
+    if (text === undefined) return;
+    await withChatAction(ctx, "typing", () => logDescribedMeal(db, ctx, text, "voice"));
   });
 
   bot.on("message:photo", async (ctx) => {

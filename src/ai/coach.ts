@@ -1,5 +1,12 @@
 import type { MealType, NutritionTotals } from "../db/meals.js";
-import type { ActivityLevel, Goal, NutritionTargets, Sex } from "../nutrition/calculations.js";
+import type {
+  ActivityLevel,
+  Goal,
+  NutritionTargets,
+  Sex,
+  WorkoutActivityType,
+  WorkoutIntensity,
+} from "../nutrition/calculations.js";
 
 // Контракт личного коуча Ням-Ням. Как и в foodAnalyzer.ts, остальной код зовёт
 // askCoach/commentOnPeriod отсюда и не знает про конкретного ИИ-провайдера, а
@@ -20,10 +27,35 @@ export interface CoachMeal {
   carbG: number;
 }
 
+export interface CoachExercise {
+  name: string;
+  sets: number | null;
+  reps: number | null; // повторений в подходе
+  weightKg: number | null; // null — свой вес
+  durationSec: number | null;
+}
+
+// Одно выполнение упражнения — для истории прогресса.
+export interface ExerciseHistoryEntry extends CoachExercise {
+  date: string; // YYYY-MM-DD в таймзоне пользователя
+}
+
+export interface CoachWorkout {
+  time: string; // HH:MM в таймзоне пользователя
+  activityType: WorkoutActivityType;
+  description: string;
+  durationMin: number;
+  intensity: WorkoutIntensity;
+  kcalBurned: number;
+  exercises: CoachExercise[];
+}
+
 export interface DaySummary {
   date: string; // YYYY-MM-DD в таймзоне пользователя
   totals: NutritionTotals;
   meals: CoachMeal[];
+  workouts: CoachWorkout[];
+  burnedKcal: number; // сумма расхода тренировок за день
 }
 
 export interface CoachMealItem {
@@ -55,6 +87,9 @@ export interface CoachProfile {
   bmrKcal: number;
   tdeeKcal: number;
   targets: NutritionTargets;
+  // true — расход тренировок прибавляется к дневной норме; false — уже заложен в
+  // коэффициент активности (см. workoutKcalBonus).
+  workoutKcalAddedToTarget: boolean;
 }
 
 export interface CoachSnapshot {
@@ -72,6 +107,8 @@ export interface CoachDataSource {
   getDailySummaries(from: string, to: string): DaySummary[];
   getMealItems(date: string): DayMealItems;
   getWeightHistory(limit: number): WeightEntry[];
+  // query — часть названия упражнения («подтяг»), новые записи первыми.
+  getExerciseHistory(query: string, limit: number): ExerciseHistoryEntry[];
 }
 
 export interface AskCoachInput {

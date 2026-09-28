@@ -7,19 +7,28 @@ import { getMealsForUserOnDate, sumNutrition, type MealRow } from "../db/meals.j
 import { getProfileByUserId } from "../db/profiles.js";
 import type { DaySummary } from "../ai/coach.js";
 import type { WeightLogRow } from "../db/weightLog.js";
-import type { NutritionTargets } from "../nutrition/calculations.js";
+import { getWorkoutsBetween, sumBurnedKcal, type WorkoutEntry } from "../db/workouts.js";
+import {
+  workoutKcalBonus,
+  type ActivityLevel,
+  type NutritionTargets,
+} from "../nutrition/calculations.js";
 import { getTodayBoundsUtc, parseYmd, weekdayOf } from "../utils/dates.js";
 import { MEAL_TYPE_LABEL } from "./mealLogging.js";
+import { formatExercise, formatWorkoutLine, workoutNotAddedNote } from "./workoutFormat.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
+// targets — обычно профиль целиком: по activityLevel решается, добавлять ли расход
+// тренировок к норме (см. workoutKcalBonus).
 export function buildTodayReport(
   meals: MealRow[],
   timeZone: string,
-  targets?: NutritionTargets,
+  targets?: NutritionTargets & { activityLevel?: ActivityLevel },
   title = "📋 Сегодня",
+  workouts: WorkoutEntry[] = [],
 ): string {
-  if (meals.length === 0) {
+  if (meals.length === 0 && workouts.length === 0) {
     return "Сегодня записей о приёмах пищи пока нет.";
   }
 
@@ -31,32 +40,63 @@ export function buildTodayReport(
     hourCycle: "h23",
   });
 
-  const lines = meals.map((meal) => {
-    const time = timeFormatter.format(meal.loggedAt);
-    return (
-      `• ${time} ${MEAL_TYPE_LABEL[meal.mealType]} — ${meal.description}: ${meal.kcal} ккал ` +
-      `(Б ${meal.proteinG.toFixed(1)} / Ж ${meal.fatG.toFixed(1)} / У ${meal.carbG.toFixed(1)})`
-    );
-  });
+  const parts = [title, ""];
 
-  const parts = [
-    title,
-    "",
-    ...lines,
-    "",
-    `Итого: ${totals.kcal} ккал | Б ${totals.proteinG.toFixed(1)} ` +
-      `Ж ${totals.fatG.toFixed(1)} У ${totals.carbG.toFixed(1)}`,
-  ];
+  if (meals.length > 0) {
+    const lines = meals.map((meal) => {
+      const time = timeFormatter.format(meal.loggedAt);
+      return (
+        `• ${time} ${MEAL_TYPE_LABEL[meal.mealType]} — ${meal.description}: ${meal.kcal} ккал ` +
+        `(Б ${meal.proteinG.toFixed(1)} / Ж ${meal.fatG.toFixed(1)} / У ${meal.carbG.toFixed(1)})`
+      );
+    });
+    parts.push(
+      ...lines,
+      "",
+      `Итого: ${totals.kcal} ккал | Б ${totals.proteinG.toFixed(1)} ` +
+        `Ж ${totals.fatG.toFixed(1)} У ${totals.carbG.toFixed(1)}`,
+    );
+  } else {
+    parts.push("Приёмов пищи пока нет.");
+  }
+
+  const burnedKcal = sumBurnedKcal(workouts);
+  if (workouts.length > 0) {
+    parts.push(
+      "",
+      "🏃 Тренировки:",
+      ...workouts.map((workout) => {
+        const line =
+          `• ${timeFormatter.format(workout.performedAt)} ${formatWorkoutLine(workout)}: ` +
+          `~${workout.kcalBurned} ккал`;
+        return workout.exercises.length > 0
+          ? `${line}\n   ${workout.exercises.map(formatExercise).join(", ")}`
+          : line;
+      }),
+      `Сожжено на тренировках: ${burnedKcal} ккал`,
+    );
+  }
 
   if (targets) {
-    const remainingKcal = targets.dailyKcalTarget - totals.kcal;
+    const bonus = targets.activityLevel ? workoutKcalBonus(targets.activityLevel, burnedKcal) : 0;
+    const dayTarget = targets.dailyKcalTarget + bonus;
+    const remainingKcal = dayTarget - totals.kcal;
+    if (workouts.length > 0) parts.push("");
     parts.push(
       `Норма: ${targets.dailyKcalTarget} ккал | Б ${targets.proteinGTarget.toFixed(1)} ` +
         `Ж ${targets.fatGTarget.toFixed(1)} У ${targets.carbGTarget.toFixed(1)}`,
+    );
+    if (bonus > 0) {
+      parts.push(`Норма с учётом тренировок: ${dayTarget} ккал (+${bonus})`);
+    }
+    parts.push(
       remainingKcal >= 0
         ? `Осталось: ${remainingKcal} ккал`
         : `Превышение: ${-remainingKcal} ккал`,
     );
+    if (burnedKcal > 0 && bonus === 0 && targets.activityLevel) {
+      parts.push("", workoutNotAddedNote(targets.activityLevel));
+    }
   }
 
   return parts.join("\n");
@@ -89,14 +129,24 @@ export function buildWeeklyReport(
       ? `📊 Неделя ${formatDayLabel(days[0].date).slice(3)}–${formatDayLabel(days.at(-1)!.date).slice(3)}`
       : "📊 Неделя";
 
-  const dayLines = days.map((day) =>
-    day.meals.length > 0
-      ? `• ${formatDayLabel(day.date)} — ${day.totals.kcal} ккал`
-      : `• ${formatDayLabel(day.date)} — нет записей`,
-  );
+  const dayLines = days.map((day) => {
+    const food =
+      day.meals.length > 0
+        ? `• ${formatDayLabel(day.date)} — ${day.totals.kcal} ккал`
+        : `• ${formatDayLabel(day.date)} — нет записей`;
+    return day.workouts.length > 0 ? `${food}, 🏃 ~${day.burnedKcal} ккал` : food;
+  });
 
   const logged = days.filter((day) => day.meals.length > 0);
   const parts = [title, "", ...dayLines, "", `Дней с записями: ${logged.length} из ${days.length}`];
+
+  const workoutCount = days.reduce((sum, day) => sum + day.workouts.length, 0);
+  const burnedKcal = days.reduce((sum, day) => sum + day.burnedKcal, 0);
+  parts.push(
+    workoutCount > 0
+      ? `🏃 Тренировок: ${workoutCount}, сожжено ~${burnedKcal} ккал`
+      : "🏃 Тренировок за неделю не записано — /workout",
+  );
 
   if (logged.length > 0) {
     const sum = sumNutrition(logged.map((day) => day.totals));
@@ -143,8 +193,11 @@ export async function sendTodayReport(ctx: MyContext, db: Db): Promise<void> {
 
   const { start, end } = getTodayBoundsUtc(new Date(), config.defaultTimezone);
   const meals = getMealsForUserOnDate(db, ctx.from.id, start, end);
+  const workouts = getWorkoutsBetween(db, ctx.from.id, start, end);
   const profile = getProfileByUserId(db, ctx.from.id);
-  await ctx.reply(buildTodayReport(meals, config.defaultTimezone, profile));
+  await ctx.reply(
+    buildTodayReport(meals, config.defaultTimezone, profile, undefined, workouts),
+  );
 }
 
 export function registerReports(bot: Bot<MyContext>, db: Db): void {

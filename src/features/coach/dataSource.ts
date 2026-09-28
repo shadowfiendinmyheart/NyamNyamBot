@@ -5,6 +5,7 @@ import {
   type CoachDataSource,
   type CoachMeal,
   type CoachProfile,
+  type CoachWorkout,
   type DayMealItems,
   type DaySummary,
   type WeightEntry,
@@ -17,7 +18,14 @@ import {
 } from "../../db/meals.js";
 import { getProfileByUserId, type ProfileRow } from "../../db/profiles.js";
 import { getWeightHistory } from "../../db/weightLog.js";
-import { calculateBmr, calculateTdee } from "../../nutrition/calculations.js";
+import {
+  getExerciseHistory,
+  getWorkoutsBetween,
+  sumBurnedKcal,
+  type WorkoutEntry,
+  type WorkoutExerciseRow,
+} from "../../db/workouts.js";
+import { calculateBmr, calculateTdee, workoutKcalBonus } from "../../nutrition/calculations.js";
 import {
   addDays,
   diffDays,
@@ -32,6 +40,8 @@ type Db = BetterSQLite3Database<typeof schema>;
 
 const RECENT_WEIGHTS = 5;
 const MAX_WEIGHT_HISTORY = 50;
+const DEFAULT_EXERCISE_HISTORY = 20;
+const MAX_EXERCISE_HISTORY = 100;
 
 export function createCoachDataSource(
   db: Db,
@@ -56,20 +66,57 @@ export function createCoachDataSource(
     carbG: meal.carbG,
   });
 
+  const toCoachExercise = ({ name, sets, reps, weightKg, durationSec }: WorkoutExerciseRow) => ({
+    name,
+    sets,
+    reps,
+    weightKg,
+    durationSec,
+  });
+
+  const toCoachWorkout = (workout: WorkoutEntry): CoachWorkout => ({
+    time: timeFormatter.format(workout.performedAt),
+    activityType: workout.activityType,
+    description: workout.description,
+    durationMin: workout.durationMin,
+    intensity: workout.intensity,
+    kcalBurned: workout.kcalBurned,
+    exercises: workout.exercises.map(toCoachExercise),
+  });
+
+  const groupByDate = <T>(rows: T[], dateOf: (row: T) => Date): Map<string, T[]> => {
+    const byDate = new Map<string, T[]>();
+    for (const row of rows) {
+      const date = formatYmd(getZonedYmd(dateOf(row), timeZone));
+      byDate.set(date, [...(byDate.get(date) ?? []), row]);
+    }
+    return byDate;
+  };
+
   const summarizeDays = (first: Ymd, last: Ymd): DaySummary[] => {
     const start = getDayBoundsUtc(first, timeZone).start;
     const end = getDayBoundsUtc(last, timeZone).end;
-    const byDate = new Map<string, MealRow[]>();
-    for (const meal of getMealsForUserOnDate(db, userId, start, end)) {
-      const date = formatYmd(getZonedYmd(meal.loggedAt, timeZone));
-      byDate.set(date, [...(byDate.get(date) ?? []), meal]);
-    }
+    const mealsByDate = groupByDate(
+      getMealsForUserOnDate(db, userId, start, end),
+      (meal) => meal.loggedAt,
+    );
+    const workoutsByDate = groupByDate(
+      getWorkoutsBetween(db, userId, start, end),
+      (workout) => workout.performedAt,
+    );
 
     const days: DaySummary[] = [];
     for (let i = 0; i <= diffDays(first, last); i++) {
       const date = formatYmd(addDays(first, i));
-      const meals = byDate.get(date) ?? [];
-      days.push({ date, totals: sumNutrition(meals), meals: meals.map(toCoachMeal) });
+      const meals = mealsByDate.get(date) ?? [];
+      const workouts = workoutsByDate.get(date) ?? [];
+      days.push({
+        date,
+        totals: sumNutrition(meals),
+        meals: meals.map(toCoachMeal),
+        workouts: workouts.map(toCoachWorkout),
+        burnedKcal: sumBurnedKcal(workouts),
+      });
     }
     return days;
   };
@@ -152,6 +199,17 @@ export function createCoachDataSource(
         : RECENT_WEIGHTS;
       return weightHistory(safeLimit);
     },
+
+    getExerciseHistory(query, limit) {
+      if (!query.trim()) throw new Error("Укажите название упражнения (query)");
+      const safeLimit = Number.isFinite(limit)
+        ? Math.min(Math.max(Math.trunc(limit), 1), MAX_EXERCISE_HISTORY)
+        : DEFAULT_EXERCISE_HISTORY;
+      return getExerciseHistory(db, userId, query, safeLimit).map((entry) => ({
+        date: formatYmd(getZonedYmd(entry.performedAt, timeZone)),
+        ...toCoachExercise(entry),
+      }));
+    },
   };
 }
 
@@ -178,5 +236,6 @@ function toCoachProfile(profile: ProfileRow | undefined): CoachProfile | null {
       fatGTarget: profile.fatGTarget,
       carbGTarget: profile.carbGTarget,
     },
+    workoutKcalAddedToTarget: workoutKcalBonus(profile.activityLevel, 1) > 0,
   };
 }

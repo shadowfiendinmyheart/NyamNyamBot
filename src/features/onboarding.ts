@@ -5,19 +5,40 @@ import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
 import { upsertProfile } from "../db/profiles.js";
 import { addWeightEntry } from "../db/weightLog.js";
-import { mainKeyboard } from "./mainMenu.js";
+import { isCancelInput, mainKeyboard } from "./mainMenu.js";
 import { ACTIVITY_LABEL, ACTIVITY_QUESTION, GOAL_LABEL, SEX_LABEL } from "./profile.js";
 import { calculateDailyTargets } from "../nutrition/calculations.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 type MyConversation = Conversation<MyContext>;
 
-async function askChoice<T extends string>(
+// С cancel вопрос можно бросить: команда или кнопка меню завершает диалог; сообщение
+// вместо ответа (фото, еда или тренировка текстом) тоже закрывает диалог и уходит
+// обычным обработчикам; чужие кнопки обрабатываются как обычно, а вопрос ждёт дальше.
+// Без cancel диалог ждёт только свой ответ (онбординг пройти обязательно).
+export interface CancelOptions {
+  cancelledText: string;
+}
+
+async function haltIfCancelled(
+  conversation: MyConversation,
+  response: Context,
+  cancel: CancelOptions,
+): Promise<void> {
+  const text = response.message?.text?.trim();
+  if (text === undefined || !isCancelInput(text)) return;
+  await response.reply(cancel.cancelledText);
+  // /cancel обрабатывать больше нечем; остальные команды и кнопки — пропускаем дальше.
+  await conversation.halt({ next: text !== "/cancel" });
+}
+
+export async function askChoice<T extends string>(
   conversation: MyConversation,
   ctx: Context,
   question: string,
   options: Record<T, string>,
   prefix: string,
+  cancel?: CancelOptions,
 ): Promise<T> {
   const keyboard = new InlineKeyboard();
   for (const [value, label] of Object.entries(options) as [T, string][]) {
@@ -25,9 +46,24 @@ async function askChoice<T extends string>(
   }
   await ctx.reply(question, { reply_markup: keyboard });
 
-  const response = await conversation.waitForCallbackQuery(new RegExp(`^${prefix}:`));
-  await response.answerCallbackQuery();
-  return response.callbackQuery.data.slice(prefix.length + 1) as T;
+  const pattern = new RegExp(`^${prefix}:`);
+  if (!cancel) {
+    const response = await conversation.waitForCallbackQuery(pattern);
+    await response.answerCallbackQuery();
+    return response.callbackQuery.data.slice(prefix.length + 1) as T;
+  }
+
+  for (;;) {
+    const response = await conversation.wait();
+    await haltIfCancelled(conversation, response, cancel);
+    const data = response.callbackQuery?.data;
+    if (data !== undefined && pattern.test(data)) {
+      await response.answerCallbackQuery();
+      return data.slice(prefix.length + 1) as T;
+    }
+    if (response.message) await conversation.halt({ next: true });
+    await conversation.skip({ next: true });
+  }
 }
 
 export async function askNumber(
@@ -35,12 +71,22 @@ export async function askNumber(
   ctx: Context,
   question: string,
   options: { min: number; max: number; integer: boolean },
+  cancel?: CancelOptions,
 ): Promise<number> {
   await ctx.reply(question);
 
   for (;;) {
-    const response = await conversation.waitFor("message:text");
-    const value = Number(response.message.text.trim().replace(",", "."));
+    const response = cancel ? await conversation.wait() : await conversation.waitFor("message:text");
+    if (cancel) await haltIfCancelled(conversation, response, cancel);
+    const text = response.message?.text;
+    if (text === undefined) {
+      if (response.message) await conversation.halt({ next: true });
+      await conversation.skip({ next: true });
+      continue;
+    }
+    const value = Number(text.trim().replace(",", "."));
+    // Не число вообще — это обычное сообщение (например, тренировка текстом), а не ответ.
+    if (cancel && !Number.isFinite(value)) await conversation.halt({ next: true });
 
     if (
       Number.isFinite(value) &&

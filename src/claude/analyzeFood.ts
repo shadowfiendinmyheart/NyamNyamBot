@@ -5,7 +5,7 @@ import { FoodAnalyzerError } from "../ai/foodAnalyzer.js";
 import type { AnalyzeFoodInput, AnalyzeFoodResult, FoodItem } from "../ai/foodAnalyzer.js";
 import { FOOD_ANALYSIS_TOOL, SYSTEM_PROMPT } from "./prompts.js";
 
-interface AnalyzeFoodToolItem {
+export interface AnalyzeFoodToolItem {
   name: string;
   estimated_weight_g: number;
   kcal: number;
@@ -54,7 +54,7 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
       ...THINKING_DISABLED,
     })
     .catch((err: unknown) => {
-      throw toFoodAnalyzerError(err);
+      throw toFoodAnalyzerError(err, "photo");
     });
 
   const toolUse = response.content.find(
@@ -82,7 +82,7 @@ function mapToolInput(raw: AnalyzeFoodToolInput): AnalyzeFoodResult {
   };
 }
 
-function mapItem(item: AnalyzeFoodToolItem): FoodItem {
+export function mapItem(item: AnalyzeFoodToolItem): FoodItem {
   if (
     typeof item.name !== "string" ||
     !Number.isFinite(item.estimated_weight_g) ||
@@ -110,21 +110,33 @@ function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function toFoodAnalyzerError(err: unknown): FoodAnalyzerError {
+// Что распознавали — от этого зависит, что предложить отправить заново: фото еды или
+// текст/голос, где могут быть и еда, и тренировки.
+export type AnalyzedInput = "photo" | "message";
+
+const RETRY_HINT: Record<AnalyzedInput, string> = {
+  photo: "Попробуйте отправить фото ещё раз через пару минут.",
+  message: "Попробуйте отправить сообщение ещё раз через пару минут.",
+};
+
+export function toFoodAnalyzerError(err: unknown, input: AnalyzedInput): FoodAnalyzerError {
   switch (classifyApiError(err)) {
     case "unavailable":
       return new FoodAnalyzerError(
-        "Сервис распознавания еды сейчас перегружен или недоступен. Попробуйте отправить фото ещё раз через пару минут.",
+        `Сервис распознавания сейчас перегружен или недоступен. ${RETRY_HINT[input]}`,
         { retryable: true, cause: err },
       );
     case "timeout":
+      // Сюда попадают и таймауты, и любые 5xx — это сбой на стороне сервиса.
       return new FoodAnalyzerError(
-        "Сервис распознавания еды не успел ответить вовремя (перегружен). Попробуйте отправить фото ещё раз через пару минут.",
+        `Сервис распознавания не ответил — похоже, он перегружен. ${RETRY_HINT[input]}`,
         { retryable: true, cause: err },
       );
     default:
       return new FoodAnalyzerError(
-        "Не получилось получить ответ от сервиса распознавания еды. Попробуйте другое фото или описание.",
+        input === "photo"
+          ? "Не получилось получить ответ от сервиса распознавания. Попробуйте другое фото или описание."
+          : "Не получилось получить ответ от сервиса распознавания. Попробуйте описать иначе.",
         { retryable: false, cause: err },
       );
   }

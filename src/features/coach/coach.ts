@@ -7,6 +7,12 @@ import { askCoach, CoachError } from "../../ai/coach.js";
 import { withChatAction } from "../../utils/chatAction.js";
 import { COACH_BUTTON } from "../mainMenu.js";
 import { transcribeVoiceMessage } from "../mealLogging.js";
+import {
+  buildVoiceConfirmMessage,
+  settleVoiceConfirmation,
+  voiceConfirmKeyboard,
+  voiceConfirmPattern,
+} from "../voiceConfirm.js";
 import { createCoachDataSource } from "./dataSource.js";
 import { CoachSessionStore } from "./session.js";
 
@@ -14,7 +20,7 @@ type Db = BetterSQLite3Database<typeof schema>;
 
 const GREETING = [
   "🐱 Мур! Я Ням-Ням — ваш личный коуч по питанию, тренировкам и самочувствию.",
-  "Я вижу ваш профиль, дневник питания и вес, так что спрашивайте что угодно:",
+  "Я вижу ваш профиль, дневник питания, тренировки и вес, так что спрашивайте что угодно:",
   "",
   "• Хорошо ли я питался сегодня?",
   "• Как прошла моя неделя?",
@@ -109,11 +115,31 @@ export function registerCoach(
       await withChatAction(ctx, "typing", async () => {
         const text = await transcribeVoiceMessage(ctx);
         if (text === undefined) return;
-        await answer(ctx, ctx.from.id, text);
+        await ctx.reply(buildVoiceConfirmMessage(text), {
+          reply_markup: voiceConfirmKeyboard("coach"),
+        });
       });
     } catch (err) {
       console.error("Не удалось обработать голосовой вопрос коучу:", err);
       await ctx.reply("Не получилось обработать голосовое сообщение, попробуйте ещё раз.");
     }
+  });
+
+  bot.callbackQuery(voiceConfirmPattern("coach"), async (ctx) => {
+    const text = await settleVoiceConfirmation(
+      ctx,
+      ctx.match[1] === "yes",
+      "Не отправляю. Задайте вопрос ещё раз голосом или текстом.",
+    );
+    if (text === undefined) return;
+
+    // Пока пользователь думал над кнопкой, разговор мог закончиться (/exit, таймаут).
+    if (!store.get(ctx.from.id)) {
+      await ctx.reply(
+        "Разговор с Ням-Ням уже завершён. Нажмите «🐱 Спросить Ням-Ням» и задайте вопрос заново.",
+      );
+      return;
+    }
+    await withChatAction(ctx, "typing", () => answer(ctx, ctx.from.id, text));
   });
 }

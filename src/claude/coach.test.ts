@@ -42,7 +42,13 @@ const snapshot: CoachSnapshot = {
   now: "воскресенье, 23 августа 2026 г. в 12:00 (2026-08-23)",
   timeZone: "Europe/Moscow",
   profile: null,
-  today: { date: "2026-08-23", totals: { kcal: 0, proteinG: 0, fatG: 0, carbG: 0 }, meals: [] },
+  today: {
+    date: "2026-08-23",
+    totals: { kcal: 0, proteinG: 0, fatG: 0, carbG: 0 },
+    meals: [],
+    workouts: [],
+    burnedKcal: 0,
+  },
   recentWeights: [],
 };
 
@@ -54,6 +60,7 @@ function makeDataSource(): CoachDataSource & { [K in keyof CoachDataSource]: Ret
       throw new Error("Некорректная дата");
     }),
     getWeightHistory: vi.fn(() => []),
+    getExerciseHistory: vi.fn(() => []),
   } as never;
 }
 

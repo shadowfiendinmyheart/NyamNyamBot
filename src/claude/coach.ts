@@ -117,6 +117,8 @@ function callTool(
       return dataSource.getMealItems(String(args.date));
     case "get_weight_history":
       return dataSource.getWeightHistory(Number(args.limit));
+    case "get_exercise_history":
+      return dataSource.getExerciseHistory(String(args.query ?? ""), Number(args.limit));
     default:
       throw new Error(`Неизвестный инструмент: ${name}`);
   }

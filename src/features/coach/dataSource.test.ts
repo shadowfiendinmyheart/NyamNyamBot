@@ -8,6 +8,7 @@ import { createMeal } from "../../db/meals.js";
 import { upsertProfile } from "../../db/profiles.js";
 import { createUser } from "../../db/users.js";
 import { addWeightEntry } from "../../db/weightLog.js";
+import { createWorkout } from "../../db/workouts.js";
 import { calculateDailyTargets, type ProfileInput } from "../../nutrition/calculations.js";
 import { createCoachDataSource } from "./dataSource.js";
 
@@ -91,6 +92,61 @@ describe("features/coach createCoachDataSource", () => {
       ["2026-08-22", 1],
     ]);
     expect(days[1].totals.kcal).toBe(0);
+  });
+
+  it("сводки по дням включают тренировки и расход", () => {
+    upsertProfile(db, 1, { ...profile, ...calculateDailyTargets(profile) });
+    const workout = {
+      userId: 1,
+      activityType: "running",
+      description: "бег",
+      durationMin: 40,
+      intensity: "moderate",
+      kcalBurned: 523,
+      source: "text",
+    } as const;
+    createWorkout(db, { ...workout, performedAt: new Date("2026-08-22T15:00:00Z") });
+    createWorkout(db, { ...workout, kcalBurned: 100, performedAt: new Date("2026-08-22T16:00:00Z") });
+    createWorkout(db, { ...workout, userId: 2, performedAt: new Date("2026-08-22T15:00:00Z") });
+
+    const [day] = source().getDailySummaries("2026-08-22", "2026-08-22");
+
+    expect(day.workouts).toHaveLength(2);
+    expect(day.workouts[0]).toMatchObject({ time: "18:00", description: "бег", kcalBurned: 523 });
+    expect(day.burnedKcal).toBe(623);
+    expect(source().getSnapshot().profile?.workoutKcalAddedToTarget).toBe(true);
+  });
+
+  it("отдаёт упражнения в сводке и историю упражнения по датам", () => {
+    const exercise = { name: "подтягивания", sets: 3, reps: 10, weightKg: null, durationSec: null };
+    const strength = {
+      userId: 1,
+      activityType: "strength",
+      description: "силовая",
+      durationMin: 20,
+      intensity: "moderate",
+      kcalBurned: 120,
+      source: "text",
+    } as const;
+    createWorkout(db, {
+      ...strength,
+      performedAt: new Date("2026-08-20T15:00:00Z"),
+      exercises: [exercise],
+    });
+    createWorkout(db, {
+      ...strength,
+      performedAt: new Date("2026-08-22T15:00:00Z"),
+      exercises: [{ ...exercise, reps: 12 }],
+    });
+
+    const [day] = source().getDailySummaries("2026-08-22", "2026-08-22");
+    expect(day.workouts[0].exercises).toEqual([{ ...exercise, reps: 12 }]);
+
+    expect(source().getExerciseHistory("ПОДТЯГ", 10)).toEqual([
+      { date: "2026-08-22", ...exercise, reps: 12 },
+      { date: "2026-08-20", ...exercise },
+    ]);
+    expect(() => source().getExerciseHistory(" ", 10)).toThrow(/название/);
   });
 
   it("отклоняет некорректные даты и слишком длинный период", () => {

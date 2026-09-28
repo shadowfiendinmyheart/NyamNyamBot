@@ -32,7 +32,7 @@ vi.mock("openai", () => ({
 }));
 
 vi.mock("../config.js", () => ({
-  config: { openaiApiKey: "test-key" },
+  config: { openaiApiKey: "test-key", openaiBaseUrl: "https://proxy.example/v1" },
 }));
 
 const { transcribeAudio } = await import("./transcribeAudio.js");
@@ -59,6 +59,7 @@ describe("openai/transcribeAudio", () => {
     expect(call.language).toBe("ru");
     expect(clientConstructorMock).toHaveBeenCalledWith({
       apiKey: "test-key",
+      baseURL: "https://proxy.example/v1",
       timeout: 60_000,
       maxRetries: 1,
     });

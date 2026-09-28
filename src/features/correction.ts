@@ -1,5 +1,5 @@
 import type { Conversation } from "@grammyjs/conversations";
-import { Bot, type Api, type Context } from "grammy";
+import { Bot, InlineKeyboard, type Api, type Context } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { eq } from "drizzle-orm";
 import * as schema from "../db/schema.js";
@@ -9,9 +9,15 @@ import { analyzeFood, type AnalyzeFoodResult, type ImageMimeType } from "../ai/f
 import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import { getMealById, updateMeal, type MealRow } from "../db/meals.js";
 import { buildMealMessage, mealActionsKeyboard, mimeTypeForFilePath, toMealItemInputs } from "./mealLogging.js";
+import {
+  buildVoiceConfirmMessage,
+  settleVoiceConfirmation,
+  voiceConfirmKeyboard,
+  voiceConfirmPattern,
+} from "./voiceConfirm.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
 import { withChatActionVia } from "../utils/chatAction.js";
-import { COACH_BUTTON, MENU_BUTTON, TODAY_BUTTON } from "./mainMenu.js";
+import { isCancelInput } from "./mainMenu.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 type MyConversation = Conversation<MyContext>;
@@ -67,12 +73,6 @@ function extractPreviousResult(db: Db, meal: MealRow): AnalyzeFoodResult {
 
 // Кнопки главного меню и команды во время правки не должны превращаться в «уточнение» —
 // такое сообщение отменяет правку и обрабатывается как обычно.
-function isCancelInput(text: string): boolean {
-  return (
-    text.startsWith("/") || [TODAY_BUTTON, MENU_BUTTON, COACH_BUTTON].includes(text)
-  );
-}
-
 // api — внешний bot.api: внутри conversation.external нельзя пользоваться ctx диалога.
 export function correctionConversation(db: Db, api: Api) {
   return async function correction(
@@ -96,42 +96,30 @@ export function correctionConversation(db: Db, api: Api) {
         "сообщением. /cancel — отменить.",
     );
 
-    // next: true — прочие обновления (фото, нажатия inline-кнопок) не глотаются
-    // диалогом, а уходят обычным обработчикам.
-    const response = await conversation.waitFor(["message:text", "message:voice"], {
-      next: true,
-    });
-
-    const rawText = response.message.text?.trim();
-    if (rawText && isCancelInput(rawText)) {
-      await response.reply("Правка отменена.");
-      // /cancel обрабатывать больше нечем; остальные команды и кнопки — пропускаем дальше.
-      await conversation.halt({ next: rawText !== "/cancel" });
-    }
-
-    let userText: string;
-    if (response.message.voice) {
-      const voice = response.message.voice;
-      
+    // Расшифровка голосового уточнения; undefined — ошибка уже показана пользователю.
+    const transcribe = async (
+      response: Context,
+      voice: { file_id: string; file_size?: number },
+    ): Promise<string | undefined> => {
       // Whisper API ограничен 25MB
       const maxSizeBytes = 25 * 1024 * 1024;
       if (voice.file_size && voice.file_size > maxSizeBytes) {
         await response.reply(
           "Голосовое сообщение слишком длинное (больше 25MB). Попробуйте записать короче или напишите текстом.",
         );
-        return;
+        return undefined;
       }
 
       const voiceFile = await conversation.external(() => api.getFile(voice.file_id));
       if (!voiceFile.file_path) {
         await response.reply("Не удалось скачать голосовое сообщение, попробуйте ещё раз.");
-        return;
+        return undefined;
       }
       const filePath = voiceFile.file_path;
 
       try {
         const buffer = await conversation.external(() => downloadTelegramFile(filePath));
-        userText = await conversation.external(() =>
+        return await conversation.external(() =>
           transcribeAudio({
             audioBuffer: buffer,
             mimeType: "audio/ogg",
@@ -145,15 +133,67 @@ export function correctionConversation(db: Db, api: Api) {
             ? err.message
             : "Не получилось распознать голосовое сообщение, попробуйте ещё раз или напишите текстом.",
         );
-        return;
+        return undefined;
       }
-    } else {
-      userText = response.message.text?.trim() ?? "";
-    }
+    };
 
-    if (!userText) {
-      await response.reply("Пустое сообщение, отмена.");
-      return;
+    // next: true — прочие обновления (фото, нажатия других inline-кнопок) не глотаются
+    // диалогом, а уходят обычным обработчикам.
+    let response = await conversation.waitFor(["message:text", "message:voice"], {
+      next: true,
+    });
+
+    let userText: string | undefined;
+    while (userText === undefined) {
+      const rawText = response.message.text?.trim();
+      if (rawText !== undefined) {
+        if (isCancelInput(rawText)) {
+          await response.reply("Правка отменена.");
+          // /cancel обрабатывать больше нечем; остальные команды и кнопки — пропускаем дальше.
+          await conversation.halt({ next: rawText !== "/cancel" });
+        }
+        if (!rawText) {
+          await response.reply("Пустое сообщение, отмена.");
+          return;
+        }
+        userText = rawText;
+        break;
+      }
+
+      const voice = response.message.voice;
+      if (!voice) return;
+      const transcript = await transcribe(response, voice);
+      if (transcript === undefined) return;
+
+      // Голосовое уточнение применяем только после подтверждения расшифровки.
+      await response.reply(buildVoiceConfirmMessage(transcript), {
+        reply_markup: voiceConfirmKeyboard("fix"),
+      });
+
+      const next = await conversation.waitFor(
+        ["callback_query:data", "message:text", "message:voice"],
+        { next: true },
+      );
+      if (next.has(["message:text", "message:voice"])) {
+        // Вместо нажатия кнопки прислали новое сообщение — это новое уточнение.
+        response = next;
+        continue;
+      }
+
+      const match = next.callbackQuery?.data?.match(voiceConfirmPattern("fix"));
+      // Чужие кнопки (удалить, обсудить…) диалог не трогает — их обработают как обычно.
+      if (!match) await conversation.skip({ next: true });
+
+      userText = await settleVoiceConfirmation(
+        next,
+        match?.[1] === "yes",
+        "Не учитываю. Опишите уточнение ещё раз — текстом или голосом. /cancel — отменить.",
+      );
+      if (userText === undefined) {
+        response = await conversation.waitFor(["message:text", "message:voice"], {
+          next: true,
+        });
+      }
     }
 
     const previous = await conversation.external(() => extractPreviousResult(db, meal));
@@ -239,6 +279,16 @@ export function registerCorrection(bot: Bot<MyContext>, db: Db): void {
   // отменять нечего.
   bot.command("cancel", async (ctx) => {
     await ctx.reply("Сейчас нечего отменять.");
+  });
+
+  // Пока правка идёт, нажатия «Да/Нет» под голосовым уточнением перехватывает сам
+  // диалог; сюда попадаем, только если правка уже закончилась (или бот перезапускался).
+  bot.callbackQuery(voiceConfirmPattern("fix"), async (ctx) => {
+    await ctx.answerCallbackQuery({
+      text: "Это уточнение уже неактуально — нажмите «✏️ Изменить» под записью ещё раз.",
+      show_alert: true,
+    });
+    await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
   });
 
   // correct_weight/correct_items — старые кнопки в уже отправленных сообщениях.

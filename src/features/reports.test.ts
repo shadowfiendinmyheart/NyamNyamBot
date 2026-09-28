@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildTodayReport, buildWeeklyReport } from "./reports.js";
 import type { DaySummary } from "../ai/coach.js";
 import type { MealRow } from "../db/meals.js";
+import type { WorkoutEntry } from "../db/workouts.js";
 
 describe("features/reports buildTodayReport", () => {
   const baseMeal: MealRow = {
@@ -74,18 +75,117 @@ describe("features/reports buildTodayReport", () => {
 
     expect(message).toContain("Превышение: 120 ккал");
   });
+
+  const workout: WorkoutEntry = {
+    id: 1,
+    userId: 1,
+    performedAt: new Date("2026-08-23T15:00:00Z"),
+    activityType: "running",
+    description: "бег",
+    durationMin: 40,
+    intensity: "moderate",
+    kcalBurned: 523,
+    source: "text",
+    rawText: "бегал 40 минут",
+    createdAt: new Date("2026-08-23T15:00:00Z"),
+    exercises: [],
+  };
+  const targets = { dailyKcalTarget: 2000, proteinGTarget: 120, fatGTarget: 60, carbGTarget: 220 };
+
+  it("при сидячей активности добавляет расход тренировок к норме", () => {
+    const message = buildTodayReport(
+      [baseMeal],
+      "Europe/Moscow",
+      { ...targets, activityLevel: "sedentary" },
+      undefined,
+      [workout],
+    );
+
+    expect(message).toContain("• 18:00 🏃 Бег — 40 мин, средняя интенсивность: ~523 ккал");
+    expect(message).toContain("Сожжено на тренировках: 523 ккал");
+    expect(message).toContain("Норма с учётом тренировок: 2523 ккал (+523)");
+    expect(message).toContain("Осталось: 2203 ккал");
+  });
+
+  it("при высокой активности не добавляет расход и объясняет почему", () => {
+    const message = buildTodayReport(
+      [baseMeal],
+      "Europe/Moscow",
+      { ...targets, activityLevel: "active" },
+      undefined,
+      [workout],
+    );
+
+    expect(message).not.toContain("Норма с учётом тренировок");
+    expect(message).toContain("Осталось: 1680 ккал");
+    expect(message).toContain("уже заложены в уровень активности «Высокая»");
+  });
+
+  it("показывает упражнения силовой тренировки под строкой тренировки", () => {
+    const strength: WorkoutEntry = {
+      ...workout,
+      activityType: "strength",
+      description: "силовая",
+      exercises: [
+        { id: 1, workoutId: 1, name: "подтягивания", sets: 3, reps: 10, weightKg: null, durationSec: null },
+        { id: 2, workoutId: 1, name: "жим лёжа", sets: 3, reps: 8, weightKg: 60, durationSec: null },
+      ],
+    };
+    const message = buildTodayReport([], "Europe/Moscow", undefined, undefined, [strength]);
+
+    expect(message).toContain("   подтягивания 3×10, жим лёжа 3×8 × 60 кг");
+  });
+
+  it("день только с тренировкой — не пустой отчёт", () => {
+    const message = buildTodayReport([], "Europe/Moscow", undefined, undefined, [workout]);
+
+    expect(message).toContain("Приёмов пищи пока нет.");
+    expect(message).toContain("Сожжено на тренировках: 523 ккал");
+  });
 });
 
 describe("features/reports buildWeeklyReport", () => {
-  const day = (date: string, kcal: number): DaySummary => ({
+  const day = (date: string, kcal: number, burnedKcal = 0): DaySummary => ({
     date,
     totals: { kcal, proteinG: 100, fatG: 60, carbG: 200 },
     meals:
       kcal > 0
         ? [{ time: "12:00", mealType: "lunch", description: "обед", kcal, proteinG: 100, fatG: 60, carbG: 200 }]
         : [],
+    workouts:
+      burnedKcal > 0
+        ? [
+            {
+              time: "18:00",
+              activityType: "running",
+              description: "бег",
+              durationMin: 40,
+              intensity: "moderate",
+              kcalBurned: burnedKcal,
+              exercises: [],
+            },
+          ]
+        : [],
+    burnedKcal,
   });
   const days = [day("2026-09-21", 1800), day("2026-09-22", 0), day("2026-09-23", 2200)];
+
+  it("показывает тренировки по дням и итог за неделю", () => {
+    const text = buildWeeklyReport(
+      [day("2026-09-21", 1800, 500), day("2026-09-22", 0, 300), day("2026-09-23", 2200)],
+      undefined,
+      [],
+    );
+    expect(text).toContain("• Пн 21.09 — 1800 ккал, 🏃 ~500 ккал");
+    expect(text).toContain("• Вт 22.09 — нет записей, 🏃 ~300 ккал");
+    expect(text).toContain("🏃 Тренировок: 2, сожжено ~800 ккал");
+  });
+
+  it("без тренировок подсказывает /workout", () => {
+    expect(buildWeeklyReport(days, undefined, [])).toContain(
+      "Тренировок за неделю не записано — /workout",
+    );
+  });
 
   it("средние считаются только по дням с записями и сравниваются с нормой", () => {
     const text = buildWeeklyReport(

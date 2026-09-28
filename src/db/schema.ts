@@ -81,6 +81,59 @@ export const reminders = sqliteTable("reminders", {
     .default(sql`(unixepoch())`),
 });
 
+export const workouts = sqliteTable("workouts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  performedAt: integer("performed_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  // Синхронно с WORKOUT_ACTIVITY_TYPES / WORKOUT_INTENSITIES из nutrition/calculations.ts:
+  // drizzle-kit не умеет импортировать их сюда (см. drizzle.config.ts).
+  activityType: text("activity_type", {
+    enum: [
+      "walking",
+      "running",
+      "cycling",
+      "swimming",
+      "strength",
+      "hiit",
+      "yoga",
+      "sports",
+      "dancing",
+      "skiing",
+      "other",
+    ],
+  }).notNull(),
+  // Как назвал активность пользователь/ИИ («теннис», «бег»): для «other» тип ничего не говорит.
+  description: text("description").notNull(),
+  durationMin: integer("duration_min").notNull(),
+  intensity: text("intensity", { enum: ["low", "moderate", "high"] }).notNull(),
+  kcalBurned: integer("kcal_burned").notNull(),
+  source: text("source", { enum: ["command", "text", "voice"] }).notNull(),
+  rawText: text("raw_text"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+// Упражнения силовой тренировки: «подтягивания 3×10», «жим лёжа 3×8 по 60 кг»,
+// «планка 3×60 с». Все параметры необязательны — что пользователь назвал, то и есть.
+export const workoutExercises = sqliteTable("workout_exercises", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workoutId: integer("workout_id")
+    .notNull()
+    .references(() => workouts.id, { onDelete: "cascade" }),
+  // В нижнем регистре — чтобы искать историю упражнения без учёта регистра (SQLite
+  // LIKE не понимает регистр кириллицы).
+  name: text("name").notNull(),
+  sets: integer("sets"),
+  reps: integer("reps"),
+  weightKg: real("weight_kg"),
+  durationSec: integer("duration_sec"),
+});
+
 export const weightLog = sqliteTable("weight_log", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id")

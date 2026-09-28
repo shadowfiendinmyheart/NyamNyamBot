@@ -7,6 +7,7 @@ import * as schema from "../db/schema.js";
 import { createMeal } from "../db/meals.js";
 import { createUser } from "../db/users.js";
 import { addWeightEntry } from "../db/weightLog.js";
+import { createWorkout } from "../db/workouts.js";
 import {
   sendEveningSummaries,
   sendWeeklyReports,
@@ -103,6 +104,26 @@ describe("cron/scheduler sendEveningSummaries", () => {
     expect(input.summaries[0].totals.kcal).toBe(220);
     expect(sendMessage.mock.calls[0][1]).toContain("🐱 Ням-Ням: Отличный день, мур!");
     expect(JSON.stringify(sendMessage.mock.calls[0][2])).toContain("coach:discuss");
+  });
+
+  it("шлёт сводку и тем, у кого за день только тренировка", async () => {
+    createWorkout(db, {
+      userId: 2,
+      activityType: "running",
+      description: "бег",
+      durationMin: 40,
+      intensity: "moderate",
+      kcalBurned: 523,
+      source: "command",
+      performedAt: new Date("2026-08-23T15:00:00Z"),
+    });
+    const sendMessage = vi.fn().mockResolvedValue({});
+
+    await sendEveningSummaries({ sendMessage } as never, db, now, "Europe/Moscow", comment);
+
+    expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([2]);
+    expect(sendMessage.mock.calls[0][1]).toContain("Сожжено на тренировках: 523 ккал");
+    expect(comment.mock.calls[0][0].summaries[0].burnedKcal).toBe(523);
   });
 
   it("при ошибке ИИ отправляет сводку без комментария", async () => {

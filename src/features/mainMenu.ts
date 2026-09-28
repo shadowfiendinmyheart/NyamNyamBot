@@ -12,6 +12,13 @@ export const TODAY_BUTTON = "📋 Сегодня";
 export const MENU_BUTTON = "⚙️ Меню";
 export const COACH_BUTTON = "🐱 Спросить Ням-Ням";
 
+// Выход из пошагового диалога: любая команда или кнопка главного меню.
+export function isCancelInput(text: string): boolean {
+  return (
+    text.startsWith("/") || [TODAY_BUTTON, MENU_BUTTON, COACH_BUTTON].includes(text)
+  );
+}
+
 export const mainKeyboard = new Keyboard()
   .text(TODAY_BUTTON)
   .text(MENU_BUTTON)
@@ -22,12 +29,14 @@ export const mainKeyboard = new Keyboard()
 
 export const HELP_TEXT = [
   "Пришлите фото еды, опишите текстом или голосовым сообщением, что съели — бот посчитает КБЖУ.",
+  "Тренировки тоже можно просто описать: «бегал 40 минут».",
   "",
-  `${TODAY_BUTTON} — сводка приёмов пищи за сегодня`,
-  `${MENU_BUTTON} — профиль и норма, вес, активность, анкета, сброс профиля, помощь`,
+  `${TODAY_BUTTON} — сводка приёмов пищи и тренировок за сегодня`,
+  `${MENU_BUTTON} — профиль и норма, вес, тренировка, активность, анкета, сброс профиля, помощь`,
   `${COACH_BUTTON} — личный коуч: питание, тренировки, самочувствие, срывы. ` +
-    "Знает ваш профиль, дневник и вес. /exit — завершить разговор",
+    "Знает ваш профиль, дневник, тренировки и вес. /exit — завершить разговор",
   "",
+  "/workout — записать тренировку (или сразу: /workout бег 40)",
   "/weight — записать текущий вес и пересчитать норму",
   "/activity — изменить уровень активности (например, если начали тренироваться)",
 ].join("\n");
@@ -37,6 +46,8 @@ function menuKeyboard(): InlineKeyboard {
     .text("👤 Мой профиль", "menu:profile")
     .row()
     .text("⚖️ Записать вес", "menu:weight")
+    .row()
+    .text("🏋️ Записать тренировку", "menu:workout")
     .row()
     .text("🏃 Изменить активность", "menu:activity")
     .row()

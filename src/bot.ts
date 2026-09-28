@@ -22,6 +22,7 @@ import { buildProfileMessage } from "./features/profile.js";
 import { getProfileByUserId } from "./db/profiles.js";
 import { registerReports } from "./features/reports.js";
 import { registerWeight, weightConversation } from "./features/weight.js";
+import { registerWorkout, workoutConversation } from "./features/workout.js";
 
 try {
   syncInviteCodes(db, config.inviteCodes);
@@ -48,6 +49,7 @@ bot.use(conversations());
 bot.use(createConversation(onboardingConversation(db), "onboarding"));
 bot.use(createConversation(correctionConversation(db, bot.api), "correction"));
 bot.use(createConversation(weightConversation(db), "weight"));
+bot.use(createConversation(workoutConversation(db), "workout"));
 bot.use(createAccessGate(db));
 
 bot.command("start", async (ctx) => {
@@ -75,6 +77,7 @@ bot.command("help", async (ctx) => {
 registerReports(bot, db);
 registerMainMenu(bot, db);
 registerWeight(bot, db);
+registerWorkout(bot, db);
 // До registerMealLogging: в режиме разговора с Ням-Ням текст и голос идут коучу.
 registerCoach(bot, db);
 registerMealLogging(bot, db);

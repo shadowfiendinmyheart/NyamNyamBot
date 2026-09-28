@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { calculateBmr, calculateDailyTargets, type ProfileInput } from "./calculations.js";
+import {
+  calculateBmr,
+  calculateDailyTargets,
+  calculateWorkoutKcal,
+  workoutKcalBonus,
+  type ProfileInput,
+} from "./calculations.js";
 
 const baseMale: ProfileInput = {
   sex: "male",
@@ -88,5 +94,32 @@ describe("calculateDailyTargets", () => {
     const kcalFromMacros =
       targets.proteinGTarget * 4 + targets.fatGTarget * 9 + targets.carbGTarget * 4;
     expect(kcalFromMacros).toBeCloseTo(targets.dailyKcalTarget, 0);
+  });
+});
+
+describe("calculateWorkoutKcal", () => {
+  it("считает ккал = MET × вес × часы", () => {
+    // бег средней интенсивности: 9.8 * 80 * (40 / 60) = 522.67
+    expect(
+      calculateWorkoutKcal({ activityType: "running", intensity: "moderate", durationMin: 40, weightKg: 80 }),
+    ).toBe(523);
+  });
+
+  it("интенсивность и вес увеличивают расход", () => {
+    const base = { activityType: "cycling", durationMin: 60, weightKg: 70 } as const;
+    const low = calculateWorkoutKcal({ ...base, intensity: "low" });
+    const high = calculateWorkoutKcal({ ...base, intensity: "high" });
+    const heavier = calculateWorkoutKcal({ ...base, intensity: "low", weightKg: 90 });
+    expect(low).toBe(280);
+    expect(high).toBeGreaterThan(low);
+    expect(heavier).toBeGreaterThan(low);
+  });
+});
+
+describe("workoutKcalBonus", () => {
+  it("добавляет расход к норме только при сидячем уровне активности", () => {
+    expect(workoutKcalBonus("sedentary", 500)).toBe(500);
+    expect(workoutKcalBonus("light", 500)).toBe(0);
+    expect(workoutKcalBonus("very_active", 500)).toBe(0);
   });
 });

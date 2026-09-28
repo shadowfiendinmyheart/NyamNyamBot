@@ -32,17 +32,20 @@ src/
   bot.ts                  # точка входа, регистрация всех хендлеров
   config.ts                # чтение .env (уже готово)
   db/
-    schema.ts               # Drizzle-схема: users, profiles, weight_log, meals, meal_items
+    schema.ts               # Drizzle-схема: users, profiles, weight_log, meals, meal_items,
+                            # workouts, reminders
     client.ts                # инициализация better-sqlite3 + drizzle
     migrate.ts               # прогон миграций
   ai/
     foodAnalyzer.ts          # контракт (типы + FoodAnalyzer) — остальной код зовёт
                               # analyzeFood отсюда, не из конкретного провайдера
+    messageAnalyzer.ts       # контракт разбора текста/голоса: еда + тренировки
     coach.ts                  # контракт коуча Ням-Ням: askCoach, commentOnPeriod,
                               # CoachDataSource (чтение данных пользователя)
   claude/
     client.ts                 # общий Anthropic-клиент и классификация ошибок API
     analyzeFood.ts           # реализация FoodAnalyzer поверх Anthropic API
+    analyzeMessage.ts        # реализация MessageAnalyzer (tool log_diary_entry)
     prompts.ts                # системные промпты и tool-схема Claude
     coach.ts, coachPrompts.ts # коуч: цикл tool use, промпты и инструменты
   features/
@@ -51,6 +54,7 @@ src/
     correction.ts             # inline-кнопки и диалог правки оценки
     reports.ts                 # /today, /week, вечерняя сводка, недельный отчёт
     weight.ts                  # /weight, пересчёт нормы КБЖУ
+    workout.ts                 # /workout, запись тренировок (workoutFormat.ts — подписи)
     coach/                     # «🐱 Спросить Ням-Ням»: режим разговора (coach.ts),
                                # сессии в памяти (session.ts), данные для ИИ (dataSource.ts)
   cron/
@@ -58,7 +62,8 @@ src/
   utils/
     dates.ts                  # границы дня/недели в таймзоне пользователя
   nutrition/
-    calculations.ts           # формула Миффлина-Сан Жеора + распределение БЖУ
+    calculations.ts           # формула Миффлина-Сан Жеора + распределение БЖУ,
+                              # расход тренировок по MET
 docker-compose.yml
 Dockerfile
 .env.example

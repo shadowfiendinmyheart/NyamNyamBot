@@ -7,7 +7,12 @@ let client: OpenAI | undefined;
 
 function getClient(): OpenAI {
   // Дефолт SDK — 10 минут ожидания и 2 повтора; для голосового сообщения это слишком.
-  client ??= new OpenAI({ apiKey: config.openaiApiKey, timeout: 60_000, maxRetries: 1 });
+  client ??= new OpenAI({
+    apiKey: config.openaiApiKey,
+    baseURL: config.openaiBaseUrl,
+    timeout: 60_000,
+    maxRetries: 1,
+  });
   return client;
 }
 

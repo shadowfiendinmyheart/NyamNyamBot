@@ -28,6 +28,8 @@ export const config = {
   get openaiApiKey(): string {
     return required("OPENAI_API_KEY");
   },
+  // Пусто/не задано — используется официальный endpoint OpenAI по умолчанию из SDK.
+  openaiBaseUrl: process.env.OPENAI_BASE_URL || undefined,
   inviteCodes: (process.env.INVITE_CODES ?? "")
     .split(",")
     .map((code) => code.trim())

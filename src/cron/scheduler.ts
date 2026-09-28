@@ -7,6 +7,7 @@ import { commentOnPeriod, type CommentOnPeriod, type PeriodKind } from "../ai/co
 import { getMealsForUserOnDate, getUserIdsWithMealsBetween } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
 import { getWeightEntriesBetween } from "../db/weightLog.js";
+import { getUserIdsWithWorkoutsBetween, getWorkoutsBetween } from "../db/workouts.js";
 import { coachDiscussKeyboard } from "../features/coach/coach.js";
 import { sendMealReminders, sendWeightReminders } from "./reminders.js";
 import { createCoachDataSource } from "../features/coach/dataSource.js";
@@ -38,6 +39,15 @@ export function timeToDailyCron(time: string): string {
 export function timeToSundayCron(time: string): string {
   const { hour, minute } = parseTime(time);
   return `${minute} ${hour} * * 0`;
+}
+
+// Пользователи с записями еды или тренировок за период.
+function getActiveUserIds(db: Db, start: Date, end: Date): number[] {
+  const ids = new Set([
+    ...getUserIdsWithMealsBetween(db, start, end),
+    ...getUserIdsWithWorkoutsBetween(db, start, end),
+  ]);
+  return [...ids].sort((a, b) => a - b);
 }
 
 // Комментарий Ням-Ням к отчёту. Если ИИ недоступен — отчёт уходит без комментария.
@@ -73,10 +83,11 @@ export async function sendEveningSummaries(
 ): Promise<void> {
   const { start, end } = getTodayBoundsUtc(now, timeZone);
 
-  for (const userId of getUserIdsWithMealsBetween(db, start, end)) {
+  for (const userId of getActiveUserIds(db, start, end)) {
     const meals = getMealsForUserOnDate(db, userId, start, end);
+    const workouts = getWorkoutsBetween(db, userId, start, end);
     const profile = getProfileByUserId(db, userId);
-    const report = buildTodayReport(meals, timeZone, profile, EVENING_SUMMARY_TITLE);
+    const report = buildTodayReport(meals, timeZone, profile, EVENING_SUMMARY_TITLE, workouts);
 
     const text = await withCoachComment(
       report,
@@ -99,7 +110,7 @@ export async function sendWeeklyReports(
 ): Promise<void> {
   const week = getWeekBoundsUtc(now, timeZone);
 
-  for (const userId of getUserIdsWithMealsBetween(db, week.start, week.end)) {
+  for (const userId of getActiveUserIds(db, week.start, week.end)) {
     const dataSource = createCoachDataSource(db, userId, timeZone, () => now);
     const days = dataSource.getDailySummaries(formatYmd(week.first), formatYmd(week.last));
     const weights = getWeightEntriesBetween(db, userId, week.start, week.end);
