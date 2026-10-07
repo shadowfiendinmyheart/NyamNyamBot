@@ -10,6 +10,8 @@ import {
   DeletedEntryStore,
   deleteMealWithUndo,
   deleteWorkoutWithUndo,
+  entryId,
+  isEntryInDiary,
   restoreDeletedEntry,
 } from "./deletedEntries.js";
 
@@ -61,6 +63,19 @@ describe("features/deletedEntries", () => {
     expect(getMealItemsForMeals(db, [mealId]).map((item) => item.name)).toEqual(["суп", "хлеб"]);
 
     expect(restoreDeletedEntry(db, store, "meal", mealId, 1)).toBeUndefined();
+    // Второе нажатие «↩️ Вернуть» отличает уже возвращённую запись от потерянной.
+    expect(isEntryInDiary(db, "meal", mealId, 1)).toBe(true);
+    expect(isEntryInDiary(db, "meal", mealId, 2)).toBe(false);
+  });
+
+  it("listForUser — только свои удаления, новые первыми", () => {
+    const first = addMeal();
+    const second = addMeal();
+    deleteMealWithUndo(db, store, first, 1);
+    deleteMealWithUndo(db, store, second, 1);
+
+    expect(store.listForUser(1).map(entryId)).toEqual([second, first]);
+    expect(store.listForUser(2)).toEqual([]);
   });
 
   it("возвращает тренировку вместе с упражнениями", () => {

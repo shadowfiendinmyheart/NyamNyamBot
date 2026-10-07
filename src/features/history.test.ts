@@ -6,7 +6,14 @@ import * as schema from "../db/schema.js";
 import { createMeal } from "../db/meals.js";
 import { createUser, setUserTimeZone } from "../db/users.js";
 import { createWorkout } from "../db/workouts.js";
-import { buildDayTitle, buildDayView, dayViewKeyboard, PAST_DAY_EMPTY_HINT } from "./history.js";
+import { DeletedEntryStore, deleteMealWithUndo } from "./deletedEntries.js";
+import {
+  buildDayTitle,
+  buildDayView,
+  dayViewKeyboard,
+  OLD_DAY_EMPTY_HINT,
+  PAST_DAY_EMPTY_HINT,
+} from "./history.js";
 
 function makeDb() {
   const sqlite = new Database(":memory:");
@@ -53,11 +60,9 @@ describe("features/history dayViewKeyboard", () => {
 
   it("прошлый день: вперёд, к сегодня и «↩️ Вернуть» после удаления", () => {
     const day = { ...today, day: 1 };
-    const keyboard = dayViewKeyboard(day, today, [], [], {
-      kind: "meal",
-      id: 3,
-      label: "овсянка",
-    });
+    const keyboard = dayViewKeyboard(day, today, [], [], [
+      { kind: "meal", id: 3, label: "овсянка" },
+    ]);
     expect(rows(keyboard)).toEqual([
       [["↩️ Вернуть «овсянка»", "day_undo:meal:3:2026-10-01"]],
       [
@@ -69,11 +74,9 @@ describe("features/history dayViewKeyboard", () => {
   });
 
   it("callback_data укладывается в 64 байта", () => {
-    const keyboard = dayViewKeyboard(today, { ...today, day: 9 }, [2_000_000_000], [2_000_000_000], {
-      kind: "workout",
-      id: 2_000_000_000,
-      label: "x",
-    });
+    const keyboard = dayViewKeyboard(today, { ...today, day: 9 }, [2_000_000_000], [2_000_000_000], [
+      { kind: "workout", id: 2_000_000_000, label: "x" },
+    ]);
     for (const row of rows(keyboard)) {
       for (const [, data] of row) expect(Buffer.byteLength(data ?? "")).toBeLessThanOrEqual(64);
     }
@@ -126,8 +129,36 @@ describe("features/history buildDayView", () => {
     expect(rows(view.keyboard)[0][0]).toEqual(["✏️ 1", `day_edit:meal:${yesterdayMeal}`]);
   });
 
+  it("кнопки «↩️ Вернуть» — для всех недавних удалений этого дня", () => {
+    const store = new DeletedEntryStore();
+    const meal = (description: string, loggedAt: string) =>
+      createMeal(db, {
+        userId: 1,
+        mealType: "lunch",
+        source: "text",
+        description,
+        items: [{ name: description, weightG: 100, kcal: 100, proteinG: 1, fatG: 1, carbG: 1 }],
+        loggedAt: new Date(loggedAt),
+      });
+    const soup = meal("суп", "2026-10-08T09:00:00Z");
+    const bread = meal("хлеб", "2026-10-08T09:05:00Z");
+    const yesterday = meal("плов", "2026-10-07T16:00:00Z");
+    for (const id of [soup, bread, yesterday]) deleteMealWithUndo(db, store, id, 1);
+
+    const undo = rows(buildDayView(db, 1, today, now, store).keyboard)
+      .flat()
+      .filter(([text]) => text?.startsWith("↩️"));
+    expect(undo).toEqual([
+      ["↩️ Вернуть «хлеб»", `day_undo:meal:${bread}:2026-10-08`],
+      ["↩️ Вернуть «суп»", `day_undo:meal:${soup}:2026-10-08`],
+    ]);
+  });
+
   it("пустой прошлый день — с подсказкой; будущий день — это сегодня", () => {
     expect(buildDayView(db, 1, { ...today, day: 6 }, now).text).toContain(PAST_DAY_EMPTY_HINT);
+    const old = buildDayView(db, 1, { year: 2026, month: 9, day: 1 }, now).text;
+    expect(old).toContain(OLD_DAY_EMPTY_HINT);
+    expect(old).not.toContain(PAST_DAY_EMPTY_HINT);
     expect(buildDayView(db, 1, { ...today, day: 20 }, now).text.startsWith("📋 Сегодня")).toBe(
       true,
     );

@@ -2,7 +2,11 @@ import type { Conversation } from "@grammyjs/conversations";
 import { Bot, InlineKeyboard, type Api, type Context } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
-import type { MyContext } from "../context.js";
+import {
+  FINISH_CONVERSATION_FIRST_TEXT,
+  hasActiveConversation,
+  type MyContext,
+} from "../context.js";
 import type { WorkoutEstimate } from "../ai/messageAnalyzer.js";
 import { getProfileByUserId } from "../db/profiles.js";
 import {
@@ -489,11 +493,9 @@ export function registerWorkout(bot: Bot<MyContext>, db: Db): void {
       return;
     }
 
-    // Любой идущий диалог (запись тренировки, правка еды, анкета…) перехватит ответ
-    // раньше правки — поэтому сначала его нужно закончить.
-    if (Object.keys(ctx.conversation.active()).length > 0) {
+    if (hasActiveConversation(ctx)) {
       await ctx.answerCallbackQuery({
-        text: "Сначала закончите текущий диалог или отправьте /cancel.",
+        text: FINISH_CONVERSATION_FIRST_TEXT,
         show_alert: true,
       });
       return;

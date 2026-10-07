@@ -24,8 +24,13 @@ export type DeletedEntry =
   | { kind: "meal"; userId: number; meal: MealRow; items: MealItemRow[] }
   | { kind: "workout"; userId: number; workout: WorkoutEntry };
 
-function entryId(entry: DeletedEntry): number {
+export function entryId(entry: DeletedEntry): number {
   return entry.kind === "meal" ? entry.meal.id : entry.workout.id;
+}
+
+// Когда была еда / тренировка — по этому времени запись попадает в день истории.
+export function entryTime(entry: DeletedEntry): Date {
+  return entry.kind === "meal" ? entry.meal.loggedAt : entry.workout.performedAt;
 }
 
 // Удалённые записи для кнопки «↩️ Вернуть»: копия строки целиком живёт здесь, в памяти
@@ -56,6 +61,11 @@ export class DeletedEntryStore {
     if (!entry || entry.userId !== userId) return undefined;
     this.entries.delete(key);
     return entry;
+  }
+
+  // Удалённые записи пользователя, которые ещё можно вернуть, — новые первыми.
+  listForUser(userId: number): DeletedEntry[] {
+    return [...this.entries.values()].filter((entry) => entry.userId === userId).reverse();
   }
 
   get size(): number {
@@ -126,4 +136,9 @@ export const UNDO_UNAVAILABLE_TEXT =
 // Под сообщением «🗑 Запись удалена» — кнопка «↩️ Вернуть» (обработчик — в features/history.ts).
 export function undoDeleteKeyboard(kind: EntryKind, id: number): InlineKeyboard {
   return new InlineKeyboard().text("↩️ Вернуть", `undo:${kind}:${id}`);
+}
+
+// Запись уже в дневнике — например, её вернули прошлым нажатием «↩️ Вернуть».
+export function isEntryInDiary(db: Db, kind: EntryKind, id: number, userId: number): boolean {
+  return kind === "meal" ? !!getMealById(db, id, userId) : !!getWorkoutById(db, id, userId);
 }
