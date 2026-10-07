@@ -5,10 +5,8 @@ Telegram-бот для закрытого круга (друзья/семья, �
 дневник питания: дневная норма калорий/БЖУ (формула Миффлина-Сан Жеора), история приёмов
 пищи, ручная коррекция оценок, трекинг веса, ежедневные/еженедельные отчёты.
 
-Полное архитектурное решение и обоснования — в
-`/Users/garfield/.claude/plans/merry-hugging-kahn.md` (там же контекст всех решений,
-согласованных с пользователем). Этот файл — краткая шпаргалка для разработки, список
-фич по итерациям — в [docs/BACKLOG.md](docs/BACKLOG.md).
+Этот файл — краткая шпаргалка для разработки, список фич по итерациям — в
+[docs/BACKLOG.md](docs/BACKLOG.md).
 
 ## Стек
 
@@ -19,6 +17,9 @@ Telegram-бот для закрытого круга (друзья/семья, �
   tool use / JSON-схему, не парсинг свободного текста. Остальной код зависит от
   провайдер-независимого контракта в `src/ai/foodAnalyzer.ts`, а не от Anthropic SDK
   напрямую — это даёт возможность заменить ИИ-провайдера, поменяв только `src/claude/`.
+- **Голос → текст:** `openai` SDK (`src/openai/transcribeAudio.ts`) за контрактом
+  `src/ai/transcriber.ts`; ключ `OPENAI_API_KEY`, опционально `OPENAI_BASE_URL`.
+- **Прокси:** `PROXY_URL` (`src/utils/proxy.ts`) — для Telegram и внешних API.
 - **БД:** SQLite (`better-sqlite3`) + Drizzle ORM. Файл БД — в `data/` (не в git). Фото еды на диск не сохраняются:
   источник — только Telegram, в `meals.telegram_file_id` хранится `file_id`, по нему фото
   при необходимости скачивается заново.
@@ -31,6 +32,7 @@ Telegram-бот для закрытого круга (друзья/семья, �
 src/
   bot.ts                  # точка входа, регистрация всех хендлеров
   config.ts                # чтение .env (уже готово)
+  context.ts               # MyContext = ConversationFlavor<Context>
   db/
     schema.ts               # Drizzle-схема: users, profiles, weight_log, meals, meal_items,
                             # workouts, reminders
@@ -42,6 +44,7 @@ src/
     messageAnalyzer.ts       # контракт разбора текста/голоса: еда + тренировки
     coach.ts                  # контракт коуча Ням-Ням: askCoach, commentOnPeriod,
                               # CoachDataSource (чтение данных пользователя)
+    transcriber.ts            # контракт расшифровки голоса
   claude/
     client.ts                 # общий Anthropic-клиент и классификация ошибок API
     analyzeFood.ts           # реализация FoodAnalyzer поверх Anthropic API
@@ -60,8 +63,11 @@ src/
                                # сессии в памяти (session.ts), данные для ИИ (dataSource.ts)
   cron/
     scheduler.ts              # node-cron: вечерняя сводка и недельный отчёт + комментарий коуча
+  openai/
+    transcribeAudio.ts        # реализация Transcriber (OpenAI)
   utils/
     dates.ts                  # границы дня/недели в таймзоне пользователя
+    proxy.ts                  # proxyDispatcher для PROXY_URL
   nutrition/
     calculations.ts           # формула Миффлина-Сан Жеора + распределение БЖУ,
                               # расход тренировок по MET
@@ -91,9 +97,10 @@ cp .env.example .env   # заполнить BOT_TOKEN, ANTHROPIC_API_KEY, INVITE
 npm install
 npm run db:migrate
 npm run dev             # long polling локально
+npm run db:generate     # после правки src/db/schema.ts — сгенерировать миграцию
+npm run build && npm test   # проверка перед закрытием тикета (tsc + vitest)
 ```
 
 ## Текущий статус
 
-Готово: `package.json`, `tsconfig.json`, `src/config.ts`, `.env.example`, `.gitignore`.
-Дальше — по порядку тикетов в [docs/BACKLOG.md](docs/BACKLOG.md).
+Прогресс по тикетам — в [docs/BACKLOG.md](docs/BACKLOG.md) и в git log (коммиты с префиксом `[N]`).
