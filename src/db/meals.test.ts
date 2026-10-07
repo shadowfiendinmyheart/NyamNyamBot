@@ -6,9 +6,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as schema from "./schema.js";
 import { createUser } from "./users.js";
 import {
+  copyMeal,
   createMeal,
   deleteMealForUser,
   getMealById,
+  getMealItemsForMeals,
   getMealsForUserOnDate,
   joinPhotoFileIds,
   mealPhotoFileIds,
@@ -278,5 +280,45 @@ describe("db/meals photo file ids", () => {
     expect(mealPhotoFileIds({ telegramFileId: "AgAC" })).toEqual(["AgAC"]);
     expect(mealPhotoFileIds({ telegramFileId: null })).toEqual([]);
     expect(joinPhotoFileIds([])).toBeNull();
+  });
+});
+
+describe("db/meals copyMeal", () => {
+  let db: ReturnType<typeof makeDb>;
+
+  beforeEach(() => {
+    db = makeDb();
+    createUser(db, 1, "alice");
+    createUser(db, 2, "bob");
+  });
+
+  it("copyMeal повторяет еду новой записью на другое время, только свою", () => {
+    const mealId = createMeal(db, {
+      userId: 1,
+      mealType: "breakfast",
+      source: "photo",
+      telegramFileId: "AgAC",
+      description: "овсянка",
+      items: [{ name: "овсянка", weightG: 250, kcal: 300, proteinG: 10, fatG: 6, carbG: 50 }],
+      rawClaudeResponse: { notes: "без сахара" },
+      loggedAt: new Date("2026-10-07T06:00:00Z"),
+    });
+    const at = { loggedAt: new Date("2026-10-08T06:30:00Z"), mealType: "breakfast" as const };
+
+    expect(copyMeal(db, mealId, 2, at)).toBeUndefined();
+    const copyId = copyMeal(db, mealId, 1, at);
+    expect(copyId).not.toBe(mealId);
+
+    const copy = getMealById(db, copyId!, 1);
+    expect(copy).toMatchObject({
+      loggedAt: at.loggedAt,
+      source: "photo",
+      telegramFileId: "AgAC",
+      description: "овсянка",
+      kcal: 300,
+      rawClaudeResponse: { notes: "без сахара" },
+    });
+    expect(getMealItemsForMeals(db, [copyId!]).map((item) => item.name)).toEqual(["овсянка"]);
+    expect(getMealById(db, mealId, 1)?.loggedAt).toEqual(new Date("2026-10-07T06:00:00Z"));
   });
 });

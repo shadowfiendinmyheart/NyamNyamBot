@@ -20,3 +20,13 @@ export function trimToLastSentence(text: string, maxLength = text.length): strin
   const lastSpace = slice.lastIndexOf(" ");
   return `${(lastSpace > 0 ? slice.slice(0, lastSpace) : slice).trimEnd()}…`;
 }
+
+// Короткая подпись для кнопки или строки: первая строка текста, не длиннее maxLength
+// символов (с многоточием, если обрезана).
+export function shortLabel(text: string, maxLength: number): string {
+  const line = text.trim().split("\n")[0].trim();
+  const chars = [...line];
+  return chars.length <= maxLength
+    ? line
+    : `${chars.slice(0, Math.max(1, maxLength - 1)).join("").trimEnd()}…`;
+}

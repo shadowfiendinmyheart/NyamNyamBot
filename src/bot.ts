@@ -24,7 +24,7 @@ import { onboardingConversation, registerOnboarding } from "./features/onboardin
 import { buildProfileMessage } from "./features/profile.js";
 import { getProfileByUserId } from "./db/profiles.js";
 import { getUserTimeZone } from "./db/users.js";
-import { registerReports } from "./features/reports.js";
+import { registerHistory } from "./features/history.js";
 import { registerTimeZone } from "./features/timezone.js";
 import {
   registerWeight,
@@ -100,7 +100,7 @@ bot.command("help", async (ctx) => {
 });
 
 registerOnboarding(bot);
-registerReports(bot, db);
+registerHistory(bot, db);
 registerMainMenu(bot, db);
 registerWeight(bot, db);
 registerWorkout(bot, db);

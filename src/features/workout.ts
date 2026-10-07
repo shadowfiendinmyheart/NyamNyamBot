@@ -7,7 +7,6 @@ import type { WorkoutEstimate } from "../ai/messageAnalyzer.js";
 import { getProfileByUserId } from "../db/profiles.js";
 import {
   createWorkout,
-  deleteWorkoutForUser,
   getWorkoutById,
   updateWorkout,
   type ExerciseInput,
@@ -23,6 +22,7 @@ import {
   type WorkoutIntensity,
 } from "../nutrition/calculations.js";
 import { askChoice, askNumber } from "./onboarding.js";
+import { deletedEntries, deleteWorkoutWithUndo, undoDeleteKeyboard } from "./deletedEntries.js";
 import {
   capitalize,
   formatExercise,
@@ -165,6 +165,15 @@ export function buildWorkoutMessage(
     );
   }
   return parts.join("\n");
+}
+
+// Сообщение о сохранённой тренировке — после «↩️ Вернуть» или из истории дня. Без
+// профиля нет уровня активности для подписи про норму — только сама тренировка.
+export function buildStoredWorkoutMessage(db: Db, workout: WorkoutEntry): string {
+  const profile = getProfileByUserId(db, workout.userId);
+  return profile
+    ? buildWorkoutMessage(workout, profile.activityLevel)
+    : `${formatWorkoutLine(workout)}\n🔥 Сожжено: ~${workout.kcalBurned} ккал`;
 }
 
 export function workoutActionsKeyboard(workoutId: number): InlineKeyboard {
@@ -495,12 +504,15 @@ export function registerWorkout(bot: Bot<MyContext>, db: Db): void {
   });
 
   bot.callbackQuery(/^delete_workout:(\d+)$/, async (ctx) => {
-    const deleted = deleteWorkoutForUser(db, Number(ctx.match[1]), ctx.from.id);
+    const workoutId = Number(ctx.match[1]);
+    const deleted = deleteWorkoutWithUndo(db, deletedEntries, workoutId, ctx.from.id);
     if (!deleted) {
       await ctx.answerCallbackQuery({ text: "Не удалось удалить запись.", show_alert: true });
       return;
     }
-    await ctx.editMessageText("🗑 Тренировка удалена.", { reply_markup: new InlineKeyboard() });
+    await ctx.editMessageText(`🗑 Тренировка удалена: ${formatWorkoutLine(deleted)}`, {
+      reply_markup: undoDeleteKeyboard("workout", workoutId),
+    });
     await ctx.answerCallbackQuery();
   });
 }

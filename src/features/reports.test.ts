@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTodayReport, buildWeeklyReport } from "./reports.js";
+import { buildTodayReport, buildWeeklyReport, EMPTY_TODAY_HINT } from "./reports.js";
 import type { DaySummary } from "../ai/coach.js";
 import type { MealRow } from "../db/meals.js";
 import type { WorkoutEntry } from "../db/workouts.js";
@@ -20,8 +20,51 @@ describe("features/reports buildTodayReport", () => {
     rawClaudeResponse: null,
   };
 
-  it("reports an empty day", () => {
-    expect(buildTodayReport([], "Europe/Moscow")).toBe("Сегодня записей о приёмах пищи пока нет.");
+  it("на пустой день подсказывает, что делать, и показывает норму", () => {
+    expect(buildTodayReport([], "Europe/Moscow")).toBe(`📋 Сегодня
+
+${EMPTY_TODAY_HINT}`);
+
+    const message = buildTodayReport(
+      [],
+      "Europe/Moscow",
+      { dailyKcalTarget: 2000, proteinGTarget: 120, fatGTarget: 60, carbGTarget: 220 },
+      "📋 Пн 06.10",
+      [],
+      { emptyHint: "В этот день записей нет." },
+    );
+    expect(message).toBe(
+      "📋 Пн 06.10\n\nВ этот день записей нет.\n\nНорма на день: 2000 ккал | Б 120.0 Ж 60.0 У 220.0",
+    );
+  });
+
+  it("нумерует еду, а затем тренировки, если просят", () => {
+    const workout: WorkoutEntry = {
+      id: 7,
+      userId: 1,
+      performedAt: new Date("2026-08-23T15:00:00Z"),
+      activityType: "running",
+      description: "бег",
+      durationMin: 30,
+      intensity: "moderate",
+      kcalBurned: 300,
+      source: "command",
+      rawText: null,
+      createdAt: new Date("2026-08-23T15:00:00Z"),
+      exercises: [],
+    };
+    const message = buildTodayReport(
+      [baseMeal, { ...baseMeal, id: 2 }],
+      "Europe/Moscow",
+      undefined,
+      undefined,
+      [workout],
+      { numbered: true },
+    );
+    expect(message).toContain("1. 09:15 🌅 Завтрак");
+    expect(message).toContain("2. 09:15 🌅 Завтрак");
+    expect(message).toContain("3. 18:00 🏃");
+    expect(message).not.toContain("• ");
   });
 
   it("lists meals with local time and totals", () => {

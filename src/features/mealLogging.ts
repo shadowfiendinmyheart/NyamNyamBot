@@ -16,7 +16,6 @@ import { analyzeMessage } from "../ai/messageAnalyzer.js";
 import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import {
   createMeal,
-  deleteMealForUser,
   getMealItemsForMeals,
   joinPhotoFileIds,
   sumNutrition,
@@ -30,6 +29,8 @@ import { MediaGroupBuffer } from "../utils/mediaGroupBuffer.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
 import { withChatAction } from "../utils/chatAction.js";
 import { buildDayProgressLine } from "./dayProgress.js";
+import { deleteMealWithUndo, deletedEntries, undoDeleteKeyboard } from "./deletedEntries.js";
+import { shortLabel } from "../utils/text.js";
 import { smallTalkReply } from "./smallTalk.js";
 import { replyRecognizedWorkouts, saveRecognizedWorkouts } from "./workout.js";
 import {
@@ -436,11 +437,8 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
 
   bot.callbackQuery(/^delete_meal:(\d+)$/, async (ctx) => {
     const mealId = Number(ctx.match[1]);
-    const deleted = deleteMealForUser(db, mealId, ctx.from.id);
-
-    if (deleted) {
-      await ctx.editMessageText("🗑 Запись удалена.", { reply_markup: new InlineKeyboard() });
-    } else {
+    const deleted = deleteMealWithUndo(db, deletedEntries, mealId, ctx.from.id);
+    if (!deleted) {
       await ctx.answerCallbackQuery({
         text: "Не удалось удалить запись.",
         show_alert: true,
@@ -448,6 +446,9 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
       return;
     }
 
+    await ctx.editMessageText(`🗑 Запись удалена: ${shortLabel(deleted.description, 60)}`, {
+      reply_markup: undoDeleteKeyboard("meal", mealId),
+    });
     await ctx.answerCallbackQuery();
   });
 }

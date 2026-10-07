@@ -176,3 +176,13 @@ export function deleteWorkoutForUser(db: Db, workoutId: number, userId: number):
 export function sumBurnedKcal(workouts: Array<Pick<WorkoutRow, "kcalBurned">>): number {
   return workouts.reduce((sum, workout) => sum + workout.kcalBurned, 0);
 }
+
+// Возвращает удалённую тренировку («↩️ Вернуть») с тем же id и упражнениями (id —
+// AUTOINCREMENT, занять его никто не мог).
+export function restoreWorkout(db: Db, entry: WorkoutEntry): void {
+  const { exercises, ...workout } = entry;
+  db.transaction((tx) => {
+    tx.insert(schema.workouts).values(workout).run();
+    if (exercises.length > 0) tx.insert(schema.workoutExercises).values(exercises).run();
+  });
+}

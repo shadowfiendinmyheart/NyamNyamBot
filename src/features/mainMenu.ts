@@ -5,7 +5,7 @@ import type { MyContext } from "../context.js";
 import { deleteProfile, getProfileByUserId } from "../db/profiles.js";
 import { getUserTimeZone } from "../db/users.js";
 import { buildProfileMessage } from "./profile.js";
-import { sendTodayReport } from "./reports.js";
+import { sendDayView } from "./history.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
@@ -38,7 +38,8 @@ export const HELP_TEXT = [
   "Забыли записать вовремя? Напишите, когда ели: «вчера на ужин…», «в 9 утра…» — или " +
     "нажмите «🕐 Время» под записью.",
   "",
-  `${TODAY_BUTTON} — сводка приёмов пищи и тренировок за сегодня`,
+  `${TODAY_BUTTON} — дневник за сегодня; ◀️ — прошлые дни. Под записями: ✏️ исправить, ` +
+    "🗑 удалить (можно «↩️ Вернуть»), 🔁 записать ту же еду ещё раз",
   `${MENU_BUTTON} — профиль и норма, вес, тренировка, активность, анкета, сброс профиля, помощь`,
   `${COACH_BUTTON} — личный коуч: питание, тренировки, самочувствие, срывы. ` +
     "Знает ваш профиль, дневник, тренировки и вес. Если в разговоре напишете, что съели, — " +
@@ -97,7 +98,7 @@ export function resetConfirmKeyboard(): InlineKeyboard {
 
 export function registerMainMenu(bot: Bot<MyContext>, db: Db): void {
   bot.hears(TODAY_BUTTON, async (ctx) => {
-    await sendTodayReport(ctx, db);
+    await sendDayView(ctx, db);
   });
 
   bot.hears(MENU_BUTTON, async (ctx) => {

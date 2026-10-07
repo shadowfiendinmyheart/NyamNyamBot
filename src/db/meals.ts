@@ -234,3 +234,43 @@ export function getMealItemsForMeals(db: Db, mealIds: number[]): MealItemRow[] {
     .orderBy(asc(schema.mealItems.id))
     .all();
 }
+
+// Возвращает удалённую запись («↩️ Вернуть») с тем же id: кнопки под старыми сообщениями
+// об этой записи снова работают. id у meals — AUTOINCREMENT, поэтому за время, пока
+// запись была удалена, его не мог занять никто другой.
+export function restoreMeal(db: Db, meal: MealRow, items: MealItemRow[]): void {
+  db.transaction((tx) => {
+    tx.insert(schema.meals).values(meal).run();
+    if (items.length > 0) tx.insert(schema.mealItems).values(items).run();
+  });
+}
+
+// «🔁 Повторить»: та же еда (состав, КБЖУ, описание, фото) новой записью на другое время.
+// undefined — исходной записи нет или она чужая.
+export function copyMeal(
+  db: Db,
+  mealId: number,
+  userId: number,
+  at: { loggedAt: Date; mealType: MealType },
+): number | undefined {
+  const meal = getMealById(db, mealId, userId);
+  if (!meal) return undefined;
+  const items = getMealItemsForMeals(db, [meal.id]);
+  return createMeal(db, {
+    userId,
+    mealType: at.mealType,
+    source: meal.source,
+    telegramFileId: meal.telegramFileId,
+    description: meal.description,
+    items: items.map(({ name, weightG, kcal, proteinG, fatG, carbG }) => ({
+      name,
+      weightG,
+      kcal,
+      proteinG,
+      fatG,
+      carbG,
+    })),
+    rawClaudeResponse: meal.rawClaudeResponse,
+    loggedAt: at.loggedAt,
+  });
+}

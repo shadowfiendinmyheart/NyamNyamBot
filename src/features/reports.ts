@@ -1,23 +1,34 @@
-import { Bot } from "grammy";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import type * as schema from "../db/schema.js";
-import { getUserTimeZone } from "../db/users.js";
-import type { MyContext } from "../context.js";
-import { getMealsForUserOnDate, sumNutrition, type MealRow } from "../db/meals.js";
-import { getProfileByUserId } from "../db/profiles.js";
+import { sumNutrition, type MealRow } from "../db/meals.js";
 import type { DaySummary } from "../ai/coach.js";
 import type { WeightLogRow } from "../db/weightLog.js";
-import { getWorkoutsBetween, sumBurnedKcal, type WorkoutEntry } from "../db/workouts.js";
+import { sumBurnedKcal, type WorkoutEntry } from "../db/workouts.js";
 import {
   dayKcalTarget,
   type ActivityLevel,
   type NutritionTargets,
 } from "../nutrition/calculations.js";
-import { getTodayBoundsUtc, parseYmd, weekdayOf } from "../utils/dates.js";
+import { parseYmd, weekdayOf, type Ymd } from "../utils/dates.js";
 import { MEAL_TYPE_LABEL } from "./mealLogging.js";
 import { formatExercise, formatWorkoutLine, workoutNotAddedNote } from "./workoutFormat.js";
 
-type Db = BetterSQLite3Database<typeof schema>;
+export const EMPTY_TODAY_HINT =
+  "Записей пока нет. Пришлите фото еды или опишите, что съели, — текстом или голосом, " +
+  "а я посчитаю КБЖУ 🐾";
+
+function formatTargets(targets: NutritionTargets): string {
+  return (
+    `${targets.dailyKcalTarget} ккал | Б ${targets.proteinGTarget.toFixed(1)} ` +
+    `Ж ${targets.fatGTarget.toFixed(1)} У ${targets.carbGTarget.toFixed(1)}`
+  );
+}
+
+export interface DayReportOptions {
+  // Нумерация записей («1.», «2.») — для истории, где у каждой записи свои кнопки
+  // с этим номером. Тренировки нумеруются после еды.
+  numbered?: boolean;
+  // Что сказать про день без записей (по умолчанию — подсказка для «сегодня»).
+  emptyHint?: string;
+}
 
 // targets — обычно профиль целиком: по activityLevel решается, добавлять ли расход
 // тренировок к норме (см. workoutKcalBonus).
@@ -27,10 +38,14 @@ export function buildTodayReport(
   targets?: NutritionTargets & { activityLevel?: ActivityLevel },
   title = "📋 Сегодня",
   workouts: WorkoutEntry[] = [],
+  options: DayReportOptions = {},
 ): string {
   if (meals.length === 0 && workouts.length === 0) {
-    return "Сегодня записей о приёмах пищи пока нет.";
+    const parts = [title, "", options.emptyHint ?? EMPTY_TODAY_HINT];
+    if (targets) parts.push("", `Норма на день: ${formatTargets(targets)}`);
+    return parts.join("\n");
   }
+  const marker = (index: number) => (options.numbered ? `${index + 1}.` : "•");
 
   const totals = sumNutrition(meals);
   const timeFormatter = new Intl.DateTimeFormat("ru-RU", {
@@ -43,10 +58,10 @@ export function buildTodayReport(
   const parts = [title, ""];
 
   if (meals.length > 0) {
-    const lines = meals.map((meal) => {
+    const lines = meals.map((meal, index) => {
       const time = timeFormatter.format(meal.loggedAt);
       return (
-        `• ${time} ${MEAL_TYPE_LABEL[meal.mealType]} — ${meal.description}: ${meal.kcal} ккал ` +
+        `${marker(index)} ${time} ${MEAL_TYPE_LABEL[meal.mealType]} — ${meal.description}: ${meal.kcal} ккал ` +
         `(Б ${meal.proteinG.toFixed(1)} / Ж ${meal.fatG.toFixed(1)} / У ${meal.carbG.toFixed(1)})`
       );
     });
@@ -65,9 +80,9 @@ export function buildTodayReport(
     parts.push(
       "",
       "🏃 Тренировки:",
-      ...workouts.map((workout) => {
+      ...workouts.map((workout, index) => {
         const line =
-          `• ${timeFormatter.format(workout.performedAt)} ${formatWorkoutLine(workout)}: ` +
+          `${marker(meals.length + index)} ${timeFormatter.format(workout.performedAt)} ${formatWorkoutLine(workout)}: ` +
           `~${workout.kcalBurned} ккал`;
         return workout.exercises.length > 0
           ? `${line}\n   ${workout.exercises.map(formatExercise).join(", ")}`
@@ -82,10 +97,7 @@ export function buildTodayReport(
     const bonus = dayTarget - targets.dailyKcalTarget;
     const remainingKcal = dayTarget - totals.kcal;
     if (workouts.length > 0) parts.push("");
-    parts.push(
-      `Норма: ${targets.dailyKcalTarget} ккал | Б ${targets.proteinGTarget.toFixed(1)} ` +
-        `Ж ${targets.fatGTarget.toFixed(1)} У ${targets.carbGTarget.toFixed(1)}`,
-    );
+    parts.push(`Норма: ${formatTargets(targets)}`);
     if (bonus > 0) {
       parts.push(`Норма с учётом тренировок: ${dayTarget} ккал (+${bonus})`);
     }
@@ -104,11 +116,15 @@ export function buildTodayReport(
 
 const WEEKDAY_SHORT = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
-function formatDayLabel(date: string): string {
-  const ymd = parseYmd(date);
-  if (!ymd) return date;
+// «Пн 06.10».
+export function formatShortDay(ymd: Ymd): string {
   const dm = `${String(ymd.day).padStart(2, "0")}.${String(ymd.month).padStart(2, "0")}`;
   return `${WEEKDAY_SHORT[weekdayOf(ymd)]} ${dm}`;
+}
+
+function formatDayLabel(date: string): string {
+  const ymd = parseYmd(date);
+  return ymd ? formatShortDay(ymd) : date;
 }
 
 function formatSignedKg(value: number): string {
@@ -186,21 +202,4 @@ export function buildWeeklyReport(
   }
 
   return parts.join("\n");
-}
-
-export async function sendTodayReport(ctx: MyContext, db: Db): Promise<void> {
-  if (!ctx.from) return;
-
-  const timeZone = getUserTimeZone(db, ctx.from.id);
-  const { start, end } = getTodayBoundsUtc(new Date(), timeZone);
-  const meals = getMealsForUserOnDate(db, ctx.from.id, start, end);
-  const workouts = getWorkoutsBetween(db, ctx.from.id, start, end);
-  const profile = getProfileByUserId(db, ctx.from.id);
-  await ctx.reply(buildTodayReport(meals, timeZone, profile, undefined, workouts));
-}
-
-export function registerReports(bot: Bot<MyContext>, db: Db): void {
-  bot.command("today", async (ctx) => {
-    await sendTodayReport(ctx, db);
-  });
 }
