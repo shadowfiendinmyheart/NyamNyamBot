@@ -1,11 +1,15 @@
-import { InlineKeyboard, type Context } from "grammy";
+import type { Conversation } from "@grammyjs/conversations";
+import { InlineKeyboard, type Api, type Context } from "grammy";
+import type { MyContext } from "../context.js";
+import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
+import { downloadTelegramFile } from "../utils/telegram.js";
 
 // Единый флоу для голосового ввода: голосовое → расшифровка → сообщение с текстом и
 // кнопками «Да/Нет» → только после «Да» расшифровка идёт дальше (в дневник, коучу,
 // в уточнение оценки). Расшифровка бывает неточной, и так пользователь видит её заранее.
 
 // Где было голосовое — от этого зависит callback_data и обработчик нажатия.
-export type VoiceConfirmScope = "meal" | "coach" | "fix";
+export type VoiceConfirmScope = "meal" | "coach" | "fix" | "motivation";
 
 // Расшифровка хранится в тексте самого сообщения с кнопками, а не в памяти:
 // callback_data ограничена 64 байтами, а так подтверждение переживает перезапуск бота.
@@ -71,4 +75,48 @@ export async function settleVoiceConfirmation(
   }
 
   return confirmed ? text : undefined;
+}
+
+// Расшифровка голосового внутри диалога (@grammyjs/conversations): все внешние вызовы
+// идут через conversation.external. undefined — ошибка уже показана пользователю.
+export async function transcribeVoiceInConversation(
+  conversation: Conversation<MyContext>,
+  api: Api,
+  response: Context,
+  voice: { file_id: string; file_size?: number },
+): Promise<string | undefined> {
+  // Whisper API ограничен 25MB
+  const maxSizeBytes = 25 * 1024 * 1024;
+  if (voice.file_size && voice.file_size > maxSizeBytes) {
+    await response.reply(
+      "Голосовое сообщение слишком длинное (больше 25MB). Попробуйте записать короче или напишите текстом.",
+    );
+    return undefined;
+  }
+
+  const voiceFile = await conversation.external(() => api.getFile(voice.file_id));
+  if (!voiceFile.file_path) {
+    await response.reply("Не удалось скачать голосовое сообщение, попробуйте ещё раз.");
+    return undefined;
+  }
+  const filePath = voiceFile.file_path;
+
+  try {
+    const buffer = await conversation.external(() => downloadTelegramFile(filePath));
+    return await conversation.external(() =>
+      transcribeAudio({
+        audioBuffer: buffer,
+        mimeType: "audio/ogg",
+        filename: filePath.split("/").pop() ?? "voice.oga",
+      }),
+    );
+  } catch (err) {
+    console.error("Не удалось распознать голосовое сообщение в диалоге:", err);
+    await response.reply(
+      err instanceof TranscriberError
+        ? err.message
+        : "Не получилось распознать голосовое сообщение, попробуйте ещё раз или напишите текстом.",
+    );
+    return undefined;
+  }
 }

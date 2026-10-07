@@ -7,6 +7,8 @@ import { createUser } from "./users.js";
 import {
   deleteProfile,
   getProfileByUserId,
+  setProfileMotivation,
+  updateProfileMetrics,
   upsertProfile,
   type UpsertProfileInput,
 } from "./profiles.js";
@@ -63,6 +65,38 @@ describe("db/profiles", () => {
 
     const all = db.select().from(schema.profiles).all();
     expect(all).toHaveLength(1);
+  });
+
+  it("сохраняет мотивацию; без неё — null", () => {
+    upsertProfile(db, 1, sampleInput);
+    expect(getProfileByUserId(db, 1)?.motivation).toBeNull();
+
+    upsertProfile(db, 1, { ...sampleInput, motivation: "Хочу влезть в костюм к свадьбе" });
+    expect(getProfileByUserId(db, 1)?.motivation).toBe("Хочу влезть в костюм к свадьбе");
+  });
+
+  it("setProfileMotivation меняет только мотивацию", () => {
+    upsertProfile(db, 1, sampleInput);
+
+    expect(setProfileMotivation(db, 1, "Врач сказал снизить сахар")).toBe(true);
+    const profile = getProfileByUserId(db, 1);
+    expect(profile?.motivation).toBe("Врач сказал снизить сахар");
+    expect(profile?.dailyKcalTarget).toBe(2136);
+
+    expect(setProfileMotivation(db, 1, null)).toBe(true);
+    expect(getProfileByUserId(db, 1)?.motivation).toBeNull();
+  });
+
+  it("setProfileMotivation без профиля возвращает false", () => {
+    expect(setProfileMotivation(db, 1, "что-то")).toBe(false);
+  });
+
+  it("пересчёт нормы по весу не теряет мотивацию", () => {
+    upsertProfile(db, 1, { ...sampleInput, motivation: "Бегать марафон" });
+
+    const result = updateProfileMetrics(db, 1, { weightKg: 78 });
+    expect(result?.after.motivation).toBe("Бегать марафон");
+    expect(getProfileByUserId(db, 1)?.motivation).toBe("Бегать марафон");
   });
 
   it("удаляет профиль", () => {

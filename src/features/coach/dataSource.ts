@@ -228,6 +228,7 @@ function toCoachProfile(profile: ProfileRow | undefined): CoachProfile | null {
     weightKg: profile.weightKg,
     activityLevel: profile.activityLevel,
     goal: profile.goal,
+    motivation: profile.motivation,
     bmrKcal: Math.round(calculateBmr(profile)),
     tdeeKcal: Math.round(calculateTdee(profile)),
     targets: {

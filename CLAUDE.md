@@ -49,7 +49,8 @@ src/
     prompts.ts                # системные промпты и tool-схема Claude
     coach.ts, coachPrompts.ts # коуч: цикл tool use, промпты и инструменты
   features/
-    onboarding.ts            # инвайт-код + анкета профиля
+    onboarding.ts            # инвайт-код + анкета профиля (+ «зачем вам бот» для коуча)
+    motivation.ts            # правка ответа «зачем вам бот» из профиля
     mealLogging.ts            # обработка фото/текста → meal + meal_items
     correction.ts             # inline-кнопки и диалог правки оценки
     reports.ts                 # /today, /week, вечерняя сводка, недельный отчёт

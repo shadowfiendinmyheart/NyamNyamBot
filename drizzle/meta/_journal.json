@@ -64,6 +64,13 @@
       "when": 1790618346970,
       "tag": "0008_add_workout_exercises",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790622040033,
+      "tag": "0009_add_profile_motivation",
+      "breakpoints": true
     }
   ]
 }

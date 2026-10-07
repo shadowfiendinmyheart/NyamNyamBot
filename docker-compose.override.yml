@@ -1,0 +1,8 @@
+# Подхватывается docker compose автоматически поверх docker-compose.yml.
+# Сеть хоста нужна для Windows + WSL (networkingMode=mirrored): так 127.0.0.1 в
+# контейнере — это Windows, и бот достаёт до прокси-порта VPN-клиента через
+# TELEGRAM_PROXY_URL=http://127.0.0.1:<порт>. Бот не открывает портов, ему нужен
+# только исходящий интернет, поэтому на Mac и VPS эта настройка ничего не ломает.
+services:
+  bot:
+    network_mode: host

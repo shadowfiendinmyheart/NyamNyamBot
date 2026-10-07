@@ -67,6 +67,8 @@ export function profileKeyboard(): InlineKeyboard {
     .text("⚖️ Записать вес", "menu:weight")
     .text("🏃 Активность", "menu:activity")
     .row()
+    .text("✍️ Зачем мне бот", "menu:motivation")
+    .row()
     .text("🔄 Пройти анкету заново", "menu:restart")
     .row()
     .text("◀️ Назад", "menu:back");

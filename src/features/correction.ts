@@ -6,12 +6,12 @@ import * as schema from "../db/schema.js";
 import { config } from "../config.js";
 import type { MyContext } from "../context.js";
 import { analyzeFood, type AnalyzeFoodResult, type ImageMimeType } from "../ai/foodAnalyzer.js";
-import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import { getMealById, updateMeal, type MealRow } from "../db/meals.js";
 import { buildMealMessage, mealActionsKeyboard, mimeTypeForFilePath, toMealItemInputs } from "./mealLogging.js";
 import {
   buildVoiceConfirmMessage,
   settleVoiceConfirmation,
+  transcribeVoiceInConversation,
   voiceConfirmKeyboard,
   voiceConfirmPattern,
 } from "./voiceConfirm.js";
@@ -96,47 +96,6 @@ export function correctionConversation(db: Db, api: Api) {
         "сообщением. /cancel — отменить.",
     );
 
-    // Расшифровка голосового уточнения; undefined — ошибка уже показана пользователю.
-    const transcribe = async (
-      response: Context,
-      voice: { file_id: string; file_size?: number },
-    ): Promise<string | undefined> => {
-      // Whisper API ограничен 25MB
-      const maxSizeBytes = 25 * 1024 * 1024;
-      if (voice.file_size && voice.file_size > maxSizeBytes) {
-        await response.reply(
-          "Голосовое сообщение слишком длинное (больше 25MB). Попробуйте записать короче или напишите текстом.",
-        );
-        return undefined;
-      }
-
-      const voiceFile = await conversation.external(() => api.getFile(voice.file_id));
-      if (!voiceFile.file_path) {
-        await response.reply("Не удалось скачать голосовое сообщение, попробуйте ещё раз.");
-        return undefined;
-      }
-      const filePath = voiceFile.file_path;
-
-      try {
-        const buffer = await conversation.external(() => downloadTelegramFile(filePath));
-        return await conversation.external(() =>
-          transcribeAudio({
-            audioBuffer: buffer,
-            mimeType: "audio/ogg",
-            filename: filePath.split("/").pop() ?? "voice.oga",
-          }),
-        );
-      } catch (err) {
-        console.error("Не удалось распознать голосовое уточнение:", err);
-        await response.reply(
-          err instanceof TranscriberError
-            ? err.message
-            : "Не получилось распознать голосовое сообщение, попробуйте ещё раз или напишите текстом.",
-        );
-        return undefined;
-      }
-    };
-
     // next: true — прочие обновления (фото, нажатия других inline-кнопок) не глотаются
     // диалогом, а уходят обычным обработчикам.
     let response = await conversation.waitFor(["message:text", "message:voice"], {
@@ -162,7 +121,7 @@ export function correctionConversation(db: Db, api: Api) {
 
       const voice = response.message.voice;
       if (!voice) return;
-      const transcript = await transcribe(response, voice);
+      const transcript = await transcribeVoiceInConversation(conversation, api, response, voice);
       if (transcript === undefined) return;
 
       // Голосовое уточнение применяем только после подтверждения расшифровки.

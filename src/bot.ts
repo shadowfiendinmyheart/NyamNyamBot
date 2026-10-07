@@ -17,12 +17,14 @@ import {
 import { registerCoach } from "./features/coach/coach.js";
 import { correctionConversation, registerCorrection } from "./features/correction.js";
 import { registerMealLogging } from "./features/mealLogging.js";
+import { motivationConversation, registerMotivation } from "./features/motivation.js";
 import { onboardingConversation } from "./features/onboarding.js";
 import { buildProfileMessage } from "./features/profile.js";
 import { getProfileByUserId } from "./db/profiles.js";
 import { registerReports } from "./features/reports.js";
 import { registerWeight, weightConversation } from "./features/weight.js";
 import { registerWorkout, workoutConversation } from "./features/workout.js";
+import { telegramClientOptions } from "./utils/telegram.js";
 
 try {
   syncInviteCodes(db, config.inviteCodes);
@@ -35,7 +37,7 @@ try {
   process.exit(1);
 }
 
-const bot = new Bot<MyContext>(config.botToken);
+const bot = new Bot<MyContext>(config.botToken, { client: telegramClientOptions });
 
 bot.catch((err) => {
   console.error("Ошибка при обработке обновления:", err);
@@ -46,7 +48,8 @@ bot.catch((err) => {
 // по-прежнему идут строго по очереди — на это рассчитаны диалоги (conversations).
 bot.use(sequentialize((ctx) => (ctx.chat?.id ?? ctx.from?.id)?.toString()));
 bot.use(conversations());
-bot.use(createConversation(onboardingConversation(db), "onboarding"));
+bot.use(createConversation(onboardingConversation(db, bot.api), "onboarding"));
+bot.use(createConversation(motivationConversation(db, bot.api), "motivation"));
 bot.use(createConversation(correctionConversation(db, bot.api), "correction"));
 bot.use(createConversation(weightConversation(db), "weight"));
 bot.use(createConversation(workoutConversation(db), "workout"));
@@ -78,6 +81,7 @@ registerReports(bot, db);
 registerMainMenu(bot, db);
 registerWeight(bot, db);
 registerWorkout(bot, db);
+registerMotivation(bot);
 // До registerMealLogging: в режиме разговора с Ням-Ням текст и голос идут коучу.
 registerCoach(bot, db);
 registerMealLogging(bot, db);

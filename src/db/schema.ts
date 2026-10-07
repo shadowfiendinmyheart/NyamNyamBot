@@ -31,6 +31,9 @@ export const profiles = sqliteTable("profiles", {
   proteinGTarget: real("protein_g_target").notNull(),
   fatGTarget: real("fat_g_target").notNull(),
   carbGTarget: real("carb_g_target").notNull(),
+  // Зачем пользователь ведёт дневник — своими словами (текстом или расшифровкой голоса).
+  // Контекст для коуча Ням-Ням; null — не рассказал.
+  motivation: text("motivation"),
 });
 
 export const meals = sqliteTable("meals", {

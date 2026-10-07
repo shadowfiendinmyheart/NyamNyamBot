@@ -18,6 +18,7 @@ export interface UpsertProfileInput extends NutritionTargets {
   weightKg: number;
   activityLevel: ActivityLevel;
   goal: Goal;
+  motivation?: string | null;
 }
 
 export type ProfileRow = typeof schema.profiles.$inferSelect;
@@ -35,6 +36,7 @@ export function upsertProfile(db: Db, userId: number, input: UpsertProfileInput)
     proteinGTarget: input.proteinGTarget,
     fatGTarget: input.fatGTarget,
     carbGTarget: input.carbGTarget,
+    motivation: input.motivation ?? null,
   };
 
   db.insert(schema.profiles)
@@ -45,6 +47,19 @@ export function upsertProfile(db: Db, userId: number, input: UpsertProfileInput)
 
 export function getProfileByUserId(db: Db, userId: number): ProfileRow | undefined {
   return db.select().from(schema.profiles).where(eq(schema.profiles.userId, userId)).get();
+}
+
+export function setProfileMotivation(
+  db: Db,
+  userId: number,
+  motivation: string | null,
+): boolean {
+  const result = db
+    .update(schema.profiles)
+    .set({ motivation })
+    .where(eq(schema.profiles.userId, userId))
+    .run();
+  return result.changes > 0;
 }
 
 export function deleteProfile(db: Db, userId: number): boolean {

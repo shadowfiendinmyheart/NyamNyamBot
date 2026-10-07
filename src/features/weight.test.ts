@@ -19,6 +19,7 @@ const before: ProfileRow = {
   proteinGTarget: 144,
   fatGTarget: 65.3,
   carbGTarget: 218.7,
+  motivation: null,
 };
 
 describe("features/weight parseWeight", () => {

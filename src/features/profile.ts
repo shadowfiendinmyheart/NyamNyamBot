@@ -45,6 +45,8 @@ export function buildProfileMessage(profile: ProfileRow | undefined): string {
     `Активность: ${ACTIVITY_LABEL[profile.activityLevel]}`,
     `Цель: ${GOAL_LABEL[profile.goal]}`,
     "",
+    profile.motivation ? `💭 Зачем мне бот:\n${profile.motivation}` : "💭 Зачем мне бот: не указано",
+    "",
     "🎯 Дневная норма:",
     `${profile.dailyKcalTarget} ккал`,
     `Б ${profile.proteinGTarget.toFixed(1)} / Ж ${profile.fatGTarget.toFixed(1)} / ` +

@@ -84,6 +84,8 @@ export interface CoachProfile {
   weightKg: number;
   activityLevel: ActivityLevel;
   goal: Goal;
+  // Зачем пользователь ведёт дневник — его словами из анкеты; null — не рассказал.
+  motivation: string | null;
   bmrKcal: number;
   tdeeKcal: number;
   targets: NutritionTargets;

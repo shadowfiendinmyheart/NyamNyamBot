@@ -75,6 +75,16 @@ describe("features/coach createCoachDataSource", () => {
     expect(snapshot.recentWeights).toEqual([{ date: "2026-08-20", weightKg: 80 }]);
   });
 
+  it("снимок передаёт коучу мотивацию из анкеты", () => {
+    upsertProfile(db, 1, {
+      ...profile,
+      ...calculateDailyTargets(profile),
+      motivation: "Хочу похудеть к лету",
+    });
+
+    expect(source().getSnapshot().profile?.motivation).toBe("Хочу похудеть к лету");
+  });
+
   it("без анкеты profile = null", () => {
     expect(source().getSnapshot().profile).toBeNull();
   });
