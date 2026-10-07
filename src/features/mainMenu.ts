@@ -41,6 +41,14 @@ export const HELP_TEXT = [
   "/activity — изменить уровень активности (например, если начали тренироваться)",
 ].join("\n");
 
+export const WELCOME_BACK_TEXT = [
+  "🐱 С возвращением! Профиль уже настроен — просто присылайте фото еды, описание " +
+    "текстом или голосовым.",
+  "",
+  `${TODAY_BUTTON} — что уже съедено сегодня и сколько осталось до нормы.`,
+  `${MENU_BUTTON} — профиль, вес, тренировки и повторная анкета.`,
+].join("\n");
+
 function menuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text("👤 Мой профиль", "menu:profile")

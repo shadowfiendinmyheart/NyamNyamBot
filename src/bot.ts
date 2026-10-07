@@ -13,12 +13,13 @@ import {
   profileKeyboard,
   registerMainMenu,
   resetConfirmKeyboard,
+  WELCOME_BACK_TEXT,
 } from "./features/mainMenu.js";
 import { registerCoach } from "./features/coach/coach.js";
 import { correctionConversation, registerCorrection } from "./features/correction.js";
 import { registerMealLogging } from "./features/mealLogging.js";
 import { motivationConversation, registerMotivation } from "./features/motivation.js";
-import { onboardingConversation } from "./features/onboarding.js";
+import { onboardingConversation, registerOnboarding } from "./features/onboarding.js";
 import { buildProfileMessage } from "./features/profile.js";
 import { getProfileByUserId } from "./db/profiles.js";
 import { registerReports } from "./features/reports.js";
@@ -55,8 +56,14 @@ bot.use(createConversation(weightConversation(db), "weight"));
 bot.use(createConversation(workoutConversation(db), "workout"));
 bot.use(createAccessGate(db));
 
+// /start шлют и те, кто уже пользуется ботом (например, «Перезапустить бота» в Telegram):
+// анкету открываем, только если профиля ещё нет.
 bot.command("start", async (ctx) => {
-  if (ctx.conversation.active("onboarding")) return;
+  if (!ctx.from || ctx.conversation.active("onboarding")) return;
+  if (getProfileByUserId(db, ctx.from.id)) {
+    await ctx.reply(WELCOME_BACK_TEXT, { reply_markup: mainKeyboard });
+    return;
+  }
   await ctx.conversation.enter("onboarding");
 });
 
@@ -77,6 +84,7 @@ bot.command("help", async (ctx) => {
   await ctx.reply(HELP_TEXT, { reply_markup: mainKeyboard });
 });
 
+registerOnboarding(bot);
 registerReports(bot, db);
 registerMainMenu(bot, db);
 registerWeight(bot, db);
