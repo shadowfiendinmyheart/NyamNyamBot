@@ -18,6 +18,7 @@ import {
   getMealItemsForMeals,
   sumNutrition,
   type MealItemInput,
+  type MealItemRow,
   type MealRow,
   type MealType,
 } from "../db/meals.js";
@@ -90,14 +91,7 @@ export function buildStoredMealMessage(
   timeZone: string,
   now: Date = new Date(),
 ): string {
-  const items = getMealItemsForMeals(db, [meal.id]).map((item) => ({
-    name: item.name,
-    estimatedWeightG: item.weightG,
-    kcal: item.kcal,
-    proteinG: item.proteinG,
-    fatG: item.fatG,
-    carbG: item.carbG,
-  }));
+  const items = toFoodItems(getMealItemsForMeals(db, [meal.id]));
   const notes = (meal.rawClaudeResponse as { notes?: string | null } | null)?.notes ?? null;
   return buildMealMessage(
     meal.mealType,
@@ -126,6 +120,17 @@ export function toMealItemInputs(items: FoodItem[]): MealItemInput[] {
     proteinG: item.proteinG,
     fatG: item.fatG,
     carbG: item.carbG,
+  }));
+}
+
+export function toFoodItems(rows: MealItemRow[]): FoodItem[] {
+  return rows.map((row) => ({
+    name: row.name,
+    estimatedWeightG: row.weightG,
+    kcal: row.kcal,
+    proteinG: row.proteinG,
+    fatG: row.fatG,
+    carbG: row.carbG,
   }));
 }
 

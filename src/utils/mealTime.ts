@@ -5,7 +5,7 @@ import type { MealType } from "../db/meals.js";
 import {
   addDays,
   diffDays,
-  getDayBoundsUtc,
+  getZonedDateTimeUtc,
   getZonedMinutesOfDay,
   getZonedYmd,
 } from "./dates.js";
@@ -54,14 +54,26 @@ export function resolveMealTime(
   let loggedAt = now;
   if (daysAgo > 0 || minutes !== undefined) {
     const day = addDays(getZonedYmd(now, timeZone), -daysAgo);
-    const at = new Date(
-      getDayBoundsUtc(day, timeZone).start.getTime() +
-        (minutes ?? getZonedMinutesOfDay(now, timeZone)) * 60_000,
-    );
+    const at = getZonedDateTimeUtc(day, minutes ?? getZonedMinutesOfDay(now, timeZone), timeZone);
     if (at < now) loggedAt = at;
   }
 
   return { loggedAt, mealType: hint.mealType ?? determineMealType(loggedAt, timeZone) };
+}
+
+// Время записи после смены типа кнопкой: типичное время нового приёма пищи в тот же
+// день (не в будущем), чтобы «🌅 Завтрак» не стоял в отчёте на 21:10. Перекус — без
+// типичного времени, время не меняется.
+export function loggedAtForMealType(
+  loggedAt: Date,
+  mealType: MealType,
+  now: Date,
+  timeZone: string,
+): Date {
+  const minutes = TYPICAL_MINUTES[mealType];
+  if (minutes === undefined) return loggedAt;
+  const at = getZonedDateTimeUtc(getZonedYmd(loggedAt, timeZone), minutes, timeZone);
+  return at < now ? at : now;
 }
 
 export function mealDaysAgo(loggedAt: Date, now: Date, timeZone: string): number {

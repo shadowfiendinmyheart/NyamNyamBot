@@ -5,7 +5,7 @@ import type { MyContext } from "../context.js";
 import { getMealById, updateMealTime, MEAL_TYPES, type MealType } from "../db/meals.js";
 import { getUserTimeZone } from "../db/users.js";
 import { getZonedMinutesOfDay } from "../utils/dates.js";
-import { mealDaysAgo, resolveMealTime } from "../utils/mealTime.js";
+import { loggedAtForMealType, mealDaysAgo, resolveMealTime } from "../utils/mealTime.js";
 import { buildStoredMealMessage, MEAL_TYPE_LABEL, mealActionsKeyboard } from "./mealLogging.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -41,10 +41,17 @@ export function registerMealTime(bot: Bot<MyContext>, db: Db): void {
     }
 
     const timeZone = getUserTimeZone(db, ctx.from.id);
-    await ctx.editMessageReplyMarkup({
-      reply_markup: mealTimeKeyboard(meal.id, meal.mealType, mealDaysAgo(meal.loggedAt, new Date(), timeZone)),
-    });
     await ctx.answerCallbackQuery({ text: "Выберите приём пищи и день" });
+    // Повторное нажатие падает с «message is not modified» — клавиатура уже та же.
+    await ctx
+      .editMessageReplyMarkup({
+        reply_markup: mealTimeKeyboard(
+          meal.id,
+          meal.mealType,
+          mealDaysAgo(meal.loggedAt, new Date(), timeZone),
+        ),
+      })
+      .catch(() => {});
   });
 
   bot.callbackQuery(/^meal_set:(\d+):(type|day):(\w+)$/, async (ctx) => {
@@ -64,7 +71,7 @@ export function registerMealTime(bot: Bot<MyContext>, db: Db): void {
         await ctx.answerCallbackQuery();
         return;
       }
-      update = { loggedAt: meal.loggedAt, mealType };
+      update = { loggedAt: loggedAtForMealType(meal.loggedAt, mealType, now, timeZone), mealType };
     } else {
       // Переносим на другой день в то же время суток (но не в будущее).
       update = resolveMealTime(
@@ -105,7 +112,9 @@ export function registerMealTime(bot: Bot<MyContext>, db: Db): void {
   });
 
   bot.callbackQuery(/^meal_time_done:(\d+)$/, async (ctx) => {
-    await ctx.editMessageReplyMarkup({ reply_markup: mealActionsKeyboard(Number(ctx.match[1])) });
     await ctx.answerCallbackQuery();
+    await ctx
+      .editMessageReplyMarkup({ reply_markup: mealActionsKeyboard(Number(ctx.match[1])) })
+      .catch(() => {});
   });
 }

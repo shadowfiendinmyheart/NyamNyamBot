@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   determineMealType,
   formatMealDay,
+  loggedAtForMealType,
   MAX_MEAL_DAYS_AGO,
   mealDaysAgo,
   normalizeDaysAgo,
@@ -114,5 +115,30 @@ describe("utils/mealTime formatMealDay", () => {
   it("counts days ago by local dates", () => {
     // 23:30 6 октября по Москве — вчера, хотя по UTC прошло меньше суток.
     expect(mealDaysAgo(new Date("2026-10-06T20:30:00Z"), now, tz)).toBe(1);
+  });
+});
+
+describe("utils/mealTime loggedAtForMealType", () => {
+  const tz = "Europe/Moscow";
+  const now = new Date("2026-10-07T18:10:00Z"); // 21:10 по Москве
+
+  it("moves the meal to the typical time of the new type on the same day", () => {
+    const loggedAt = new Date("2026-10-06T18:10:00Z"); // вчера 21:10
+    expect(loggedAtForMealType(loggedAt, "breakfast", now, tz)).toEqual(new Date("2026-10-06T06:00:00Z"));
+  });
+
+  it("keeps the time for a snack and never moves into the future", () => {
+    const morning = new Date("2026-10-07T07:00:00Z"); // 10:00 по Москве
+    expect(loggedAtForMealType(morning, "snack", now, tz)).toEqual(morning);
+    expect(loggedAtForMealType(morning, "dinner", morning, tz)).toEqual(morning);
+  });
+});
+
+describe("utils/mealTime resolveMealTime across a DST switch", () => {
+  it("keeps the named local time on the day clocks move forward", () => {
+    // 29 марта 2026 в Берлине переход на летнее время (UTC+1 → UTC+2) в 02:00.
+    const now = new Date("2026-03-31T10:00:00Z");
+    const { loggedAt } = resolveMealTime({ daysAgo: 2, minutesOfDay: 9 * 60, mealType: null }, now, "Europe/Berlin");
+    expect(loggedAt).toEqual(new Date("2026-03-29T07:00:00Z")); // 09:00 CEST
   });
 });

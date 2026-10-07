@@ -1,18 +1,18 @@
 import type { Conversation } from "@grammyjs/conversations";
 import { Bot, InlineKeyboard, type Api, type Context } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { eq } from "drizzle-orm";
-import * as schema from "../db/schema.js";
+import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
 import type { MyContext } from "../context.js";
 import { analyzeFood, type AnalyzeFoodResult, type ImageMimeType } from "../ai/foodAnalyzer.js";
-import { getMealById, updateMeal, type MealRow } from "../db/meals.js";
+import { getMealById, getMealItemsForMeals, updateMeal, type MealRow } from "../db/meals.js";
 import { getUserTimeZone } from "../db/users.js";
 import {
   buildMealMessage,
   buildStoredMealMessage,
   mealActionsKeyboard,
   mimeTypeForFilePath,
+  toFoodItems,
   toMealItemInputs,
 } from "./mealLogging.js";
 import {
@@ -58,23 +58,10 @@ function extractPreviousResult(db: Db, meal: MealRow): AnalyzeFoodResult {
   const stored = meal.rawClaudeResponse as AnalyzeFoodResult | null;
   if (stored) return stored;
 
-  const items = db
-    .select()
-    .from(schema.mealItems)
-    .where(eq(schema.mealItems.mealId, meal.id))
-    .all();
-
   return {
     foodDetected: true,
     notes: null,
-    items: items.map((i) => ({
-      name: i.name,
-      estimatedWeightG: i.weightG,
-      kcal: i.kcal,
-      proteinG: i.proteinG,
-      fatG: i.fatG,
-      carbG: i.carbG,
-    })),
+    items: toFoodItems(getMealItemsForMeals(db, [meal.id])),
   };
 }
 

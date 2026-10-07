@@ -50,10 +50,20 @@ function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
   return asUtc - date.getTime();
 }
 
-function zonedMidnightUtc({ year, month, day }: Ymd, timeZone: string): Date {
-  const naiveUtc = Date.UTC(year, month - 1, day, 0, 0, 0);
-  const offsetMs = getTimeZoneOffsetMs(new Date(naiveUtc), timeZone);
-  return new Date(naiveUtc - offsetMs);
+// Момент в UTC для локального времени дня. Смещение пояса берётся на сам этот момент
+// (второй проход), а не на полночь — иначе в дни перевода часов время съезжает на час.
+export function getZonedDateTimeUtc(
+  { year, month, day }: Ymd,
+  minutesOfDay: number,
+  timeZone: string,
+): Date {
+  const naiveUtc = Date.UTC(year, month - 1, day, 0, minutesOfDay, 0);
+  const guess = naiveUtc - getTimeZoneOffsetMs(new Date(naiveUtc), timeZone);
+  return new Date(naiveUtc - getTimeZoneOffsetMs(new Date(guess), timeZone));
+}
+
+function zonedMidnightUtc(ymd: Ymd, timeZone: string): Date {
+  return getZonedDateTimeUtc(ymd, 0, timeZone);
 }
 
 export function addDays({ year, month, day }: Ymd, days: number): Ymd {
