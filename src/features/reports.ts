@@ -192,7 +192,7 @@ export function buildWeeklyReport(
 
   parts.push("");
   if (weights.length === 0) {
-    parts.push("⚖️ Вес за неделю не записывали — /weight");
+    parts.push("⚖️ Вес за неделю не записывали — просто пришлите число, например «78.5»");
   } else if (weights.length === 1) {
     parts.push(`⚖️ Вес: ${weights[0].weightKg} кг (одна запись за неделю)`);
   } else {

@@ -1,4 +1,4 @@
-import { Bot, GrammyError, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import {
@@ -20,6 +20,7 @@ import {
   type Ymd,
 } from "../utils/dates.js";
 import { determineMealType, MAX_MEAL_DAYS_AGO } from "../utils/mealTime.js";
+import { isMessageNotModified } from "../utils/telegram.js";
 import { shortLabel } from "../utils/text.js";
 import {
   deletedEntries,
@@ -176,7 +177,7 @@ async function showDayView(ctx: MyContext, view: DayView): Promise<void> {
   try {
     await ctx.editMessageText(view.text, { reply_markup: view.keyboard });
   } catch (err) {
-    if (err instanceof GrammyError && err.description.includes("message is not modified")) return;
+    if (isMessageNotModified(err)) return;
     throw err;
   }
 }
@@ -204,7 +205,7 @@ function restoreEntry(
 function restoreAnswer(outcome: RestoreOutcome): { text: string; show_alert?: boolean } {
   switch (outcome) {
     case "restored":
-      return { text: "↩️ Вернул" };
+      return { text: "↩️ Вернула" };
     case "alreadyRestored":
       return { text: "Запись уже на месте" };
     case "unavailable":
@@ -301,9 +302,9 @@ export function registerHistory(bot: Bot<MyContext>, db: Db): void {
       return;
     }
 
-    await ctx.answerCallbackQuery({ text: "🔁 Записал ещё раз" });
+    await ctx.answerCallbackQuery({ text: "🔁 Записала ещё раз" });
     await showDayView(ctx, buildDayView(db, userId, parseYmd(ctx.match[2]), now));
-    await ctx.reply(`🔁 Записал ещё раз:\n\n${buildStoredMealMessage(db, meal, timeZone, now)}`, {
+    await ctx.reply(`🔁 Записала ещё раз:\n\n${buildStoredMealMessage(db, meal, timeZone, now)}`, {
       reply_markup: mealActionsKeyboard(meal.id),
     });
   });

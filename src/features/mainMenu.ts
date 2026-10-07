@@ -1,10 +1,21 @@
 import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
-import type { MyContext } from "../context.js";
+import {
+  FINISH_CONVERSATION_FIRST_TEXT,
+  hasActiveConversation,
+  type MyContext,
+} from "../context.js";
 import { deleteProfile, getProfileByUserId } from "../db/profiles.js";
 import { getUserTimeZone } from "../db/users.js";
-import { buildProfileMessage } from "./profile.js";
+import {
+  buildProfileMessage,
+  FILL_PROFILE_BUTTON,
+  FILL_PROFILE_DATA,
+  fillProfileKeyboard,
+  RESTART_ONBOARDING_BUTTON,
+} from "./profile.js";
+import { NOTIFICATIONS_BUTTON } from "./notifications.js";
 import { sendDayView } from "./history.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -32,23 +43,23 @@ export const mainKeyboard = new Keyboard()
   .persistent();
 
 export const HELP_TEXT = [
-  "Пришлите фото еды, опишите текстом или голосовым сообщением, что съели — бот посчитает КБЖУ. " +
+  "🐱 Я Ням-Ням — считаю КБЖУ и веду ваш дневник питания.",
+  "",
+  "🍽 Пришлите фото еды, опишите текстом или голосовым, что съели, — я посчитаю калории " +
+    "и БЖУ. К фото можно добавить подпись («без сахара», «половина порции») — учту её. " +
     "Несколько фото одного приёма пищи (суп и второе) — отправьте альбомом.",
-  "Тренировки тоже можно просто описать: «бегал 40 минут». Вес — просто числом: «78.5».",
-  "Забыли записать вовремя? Напишите, когда ели: «вчера на ужин…», «в 9 утра…» — или " +
-    "нажмите «🕐 Время» под записью.",
+  "✏️ Если я ошиблась с оценкой — нажмите «✏️ Изменить» под записью и напишите, что не так. " +
+    "«🕐 Время» — поменять приём пищи или день, «🗑 Удалить» — убрать запись (можно «↩️ Вернуть»).",
+  "🕐 Забыли записать вовремя? Напишите, когда ели: «вчера на ужин…», «в 9 утра…».",
+  "🏋️ Тренировку просто опишите: «бегал 40 минут». ⚖️ Вес — просто числом: «78.5».",
   "",
-  `${TODAY_BUTTON} — дневник за сегодня; ◀️ — прошлые дни. Под записями: ✏️ исправить, ` +
-    "🗑 удалить (можно «↩️ Вернуть»), 🔁 записать ту же еду ещё раз",
-  `${MENU_BUTTON} — профиль и норма, вес, тренировка, активность, анкета, сброс профиля, помощь`,
-  `${COACH_BUTTON} — личный коуч: питание, тренировки, самочувствие, срывы. ` +
-    "Знает ваш профиль, дневник, тренировки и вес. Если в разговоре напишете, что съели, — " +
-    `предложит записать в дневник. «${COACH_EXIT_BUTTON}» или /exit — вернуться к записи еды`,
-  "",
-  "/workout — записать тренировку (или сразу: /workout бег 40)",
-  "/weight — записать текущий вес и пересчитать норму",
-  "/activity — изменить уровень активности (например, если начали тренироваться)",
-  "/timezone — часовой пояс (или сразу: /timezone Екатеринбург, /timezone UTC+5)",
+  `${TODAY_BUTTON} — дневник за сегодня и сколько осталось до нормы; ◀️ — прошлые дни, ` +
+    "🔁 — записать ту же еду ещё раз.",
+  `${MENU_BUTTON} — вес, тренировка и профиль: норма, активность, часовой пояс, ` +
+    `«${NOTIFICATIONS_BUTTON}», анкета.`,
+  `${COACH_BUTTON} — поговорить со мной о питании, тренировках, самочувствии и срывах. ` +
+    "Я вижу ваш профиль, дневник, тренировки и вес. Напишете в разговоре, что съели, — " +
+    `предложу записать в дневник. «${COACH_EXIT_BUTTON}» — вернуться к записи еды.`,
 ].join("\n");
 
 export const WELCOME_BACK_TEXT = [
@@ -56,23 +67,19 @@ export const WELCOME_BACK_TEXT = [
     "текстом или голосовым.",
   "",
   `${TODAY_BUTTON} — что уже съедено сегодня и сколько осталось до нормы.`,
-  `${MENU_BUTTON} — профиль, вес, тренировки и повторная анкета.`,
+  `${MENU_BUTTON} — вес, тренировки, профиль и уведомления.`,
 ].join("\n");
 
+const MENU_TEXT = "⚙️ Меню";
+
+// Частые действия — сверху, по два в ряд. Анкета, удаление профиля и настройки —
+// внутри «👤 Профиль».
 function menuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
-    .text("👤 Мой профиль", "menu:profile")
+    .text("⚖️ Вес", "menu:weight")
+    .text("🏋️ Тренировка", "menu:workout")
     .row()
-    .text("⚖️ Записать вес", "menu:weight")
-    .row()
-    .text("🏋️ Записать тренировку", "menu:workout")
-    .row()
-    .text("🏃 Изменить активность", "menu:activity")
-    .row()
-    .text("🔄 Пройти анкету заново", "menu:restart")
-    .row()
-    .text("🗑 Удалить профиль", "menu:reset")
-    .row()
+    .text("👤 Профиль", "menu:profile")
     .text("❓ Помощь", "menu:help");
 }
 
@@ -80,20 +87,66 @@ function backKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text("◀️ Назад", "menu:back");
 }
 
-export function profileKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text("🏃 Активность", "menu:activity")
-    .text("🕐 Часовой пояс", "menu:timezone")
-    .row()
-    .text("✍️ Зачем мне бот", "menu:motivation")
-    .row()
-    .text("🔄 Пройти анкету заново", "menu:restart")
-    .row()
-    .text("◀️ Назад", "menu:back");
+// Без профиля править нечего — только заполнить анкету (пояс и уведомления живут
+// отдельно от анкеты и доступны всегда).
+export function profileKeyboard(hasProfile: boolean): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  if (hasProfile) {
+    keyboard
+      .text("🏃 Активность", "menu:activity")
+      .text("🕐 Часовой пояс", "menu:timezone")
+      .row()
+      .text(NOTIFICATIONS_BUTTON, "menu:notifications")
+      .text("✍️ Зачем мне бот", "menu:motivation")
+      .row()
+      .text(RESTART_ONBOARDING_BUTTON, "menu:restart")
+      .text("🗑 Удалить профиль", "menu:reset");
+  } else {
+    keyboard
+      .text(FILL_PROFILE_BUTTON, FILL_PROFILE_DATA)
+      .row()
+      .text("🕐 Часовой пояс", "menu:timezone")
+      .text(NOTIFICATIONS_BUTTON, "menu:notifications");
+  }
+  return keyboard.row().text("◀️ Назад", "menu:back");
 }
 
+export const RESET_CONFIRM_TEXT = [
+  "🗑 Удалить профиль?",
+  "",
+  "Удалю анкету: пол, возраст, рост, цель, уровень активности, дневную норму КБЖУ " +
+    "и ответ «зачем мне бот».",
+  "",
+  "Останутся дневник питания, тренировки, история веса, часовой пояс и настройки " +
+    "уведомлений — после новой анкеты всё будет на месте.",
+].join("\n");
+
+const PROFILE_DELETED_TEXT =
+  "🗑 Профиль удалён. Дневник, тренировки и история веса на месте. Чтобы я снова " +
+  `считала норму, нажмите «${FILL_PROFILE_BUTTON}».`;
+
 export function resetConfirmKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().text("✅ Да, удалить", "menu:reset_do").text("❌ Отмена", "menu:back");
+  return new InlineKeyboard()
+    .text("✅ Да, удалить", "menu:reset_do")
+    .text("❌ Отмена", "menu:profile");
+}
+
+// Экран «👤 Профиль»: анкета и норма, кнопки — в зависимости от того, есть ли профиль.
+export function buildProfileView(
+  db: Db,
+  userId: number,
+): { text: string; reply_markup: InlineKeyboard } {
+  const profile = getProfileByUserId(db, userId);
+  return {
+    text: buildProfileMessage(profile, getUserTimeZone(db, userId)),
+    reply_markup: profileKeyboard(profile !== undefined),
+  };
+}
+
+async function startOnboarding(ctx: MyContext): Promise<void> {
+  // Повторная анкета пропускает чужие кнопки к обычным обработчикам — в том числе эти.
+  if (ctx.conversation.active("onboarding")) return;
+  await ctx.conversation.enter("onboarding");
 }
 
 export function registerMainMenu(bot: Bot<MyContext>, db: Db): void {
@@ -102,11 +155,11 @@ export function registerMainMenu(bot: Bot<MyContext>, db: Db): void {
   });
 
   bot.hears(MENU_BUTTON, async (ctx) => {
-    await ctx.reply("⚙️ Меню", { reply_markup: menuKeyboard() });
+    await ctx.reply(MENU_TEXT, { reply_markup: menuKeyboard() });
   });
 
   bot.callbackQuery("menu:back", async (ctx) => {
-    await ctx.editMessageText("⚙️ Меню", { reply_markup: menuKeyboard() });
+    await ctx.editMessageText(MENU_TEXT, { reply_markup: menuKeyboard() });
     await ctx.answerCallbackQuery();
   });
 
@@ -116,37 +169,46 @@ export function registerMainMenu(bot: Bot<MyContext>, db: Db): void {
   });
 
   bot.callbackQuery("menu:profile", async (ctx) => {
-    if (!ctx.from) return;
-    const profile = getProfileByUserId(db, ctx.from.id);
-    await ctx.editMessageText(buildProfileMessage(profile, getUserTimeZone(db, ctx.from.id)), {
-      reply_markup: profileKeyboard(),
-    });
+    const { text, reply_markup } = buildProfileView(db, ctx.from.id);
+    await ctx.editMessageText(text, { reply_markup });
     await ctx.answerCallbackQuery();
   });
 
   bot.callbackQuery("menu:reset", async (ctx) => {
-    await ctx.editMessageText("Точно удалить профиль и начать анкету заново?", {
-      reply_markup: resetConfirmKeyboard(),
-    });
+    await ctx.editMessageText(RESET_CONFIRM_TEXT, { reply_markup: resetConfirmKeyboard() });
     await ctx.answerCallbackQuery();
   });
 
   bot.callbackQuery("menu:reset_do", async (ctx) => {
-    if (!ctx.from) return;
     const deleted = deleteProfile(db, ctx.from.id);
-    await ctx.editMessageText(
-      deleted
-        ? "Профиль удалён. Нажмите «🔄 Пройти анкету заново» в меню, когда будете готовы."
-        : "У вас пока нет профиля.",
-    );
+    await ctx.editMessageText(deleted ? PROFILE_DELETED_TEXT : "🐱 Профиля и так нет.", {
+      reply_markup: fillProfileKeyboard(),
+    });
     await ctx.answerCallbackQuery();
   });
 
   bot.callbackQuery("menu:restart", async (ctx) => {
     await ctx.editMessageText("Открываю анкету...");
     await ctx.answerCallbackQuery();
-    // Повторная анкета пропускает чужие кнопки к обычным обработчикам — в том числе эту.
-    if (ctx.conversation.active("onboarding")) return;
-    await ctx.conversation.enter("onboarding");
+    await startOnboarding(ctx);
+  });
+
+  // «📝 Заполнить анкету» под сообщениями «нет профиля», в профиле и после удаления.
+  bot.callbackQuery(FILL_PROFILE_DATA, async (ctx) => {
+    if (getProfileByUserId(db, ctx.from.id)) {
+      await ctx.answerCallbackQuery({
+        text: "Анкета уже заполнена — поменять ответы можно в «👤 Профиль».",
+        show_alert: true,
+      });
+      await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
+      return;
+    }
+    if (hasActiveConversation(ctx) && !ctx.conversation.active("onboarding")) {
+      await ctx.answerCallbackQuery({ text: FINISH_CONVERSATION_FIRST_TEXT, show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
+    await startOnboarding(ctx);
   });
 }

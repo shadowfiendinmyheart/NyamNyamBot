@@ -8,23 +8,24 @@ import { db } from "./db/client.js";
 import { syncInviteCodes } from "./db/inviteCodes.js";
 import { createAccessGate } from "./features/accessGate.js";
 import {
+  buildProfileView,
   HELP_TEXT,
   mainKeyboard,
-  profileKeyboard,
   registerMainMenu,
+  RESET_CONFIRM_TEXT,
   resetConfirmKeyboard,
   WELCOME_BACK_TEXT,
 } from "./features/mainMenu.js";
-import { registerCoach } from "./features/coach/coach.js";
+import { coachKeyboard, registerCoach } from "./features/coach/coach.js";
+import { CoachSessionStore } from "./features/coach/session.js";
 import { correctionConversation, registerCorrection } from "./features/correction.js";
 import { registerMealLogging } from "./features/mealLogging.js";
 import { registerMealTime } from "./features/mealTime.js";
 import { motivationConversation, registerMotivation } from "./features/motivation.js";
 import { onboardingConversation, registerOnboarding } from "./features/onboarding.js";
-import { buildProfileMessage } from "./features/profile.js";
 import { getProfileByUserId } from "./db/profiles.js";
-import { getUserTimeZone } from "./db/users.js";
 import { registerHistory } from "./features/history.js";
+import { registerNotifications } from "./features/notifications.js";
 import { registerTimeZone } from "./features/timezone.js";
 import {
   registerWeight,
@@ -82,21 +83,21 @@ bot.command("start", async (ctx) => {
 
 bot.command("reset", async (ctx) => {
   if (!ctx.from) return;
-  await ctx.reply("Точно удалить профиль и начать анкету заново?", {
-    reply_markup: resetConfirmKeyboard(),
-  });
+  await ctx.reply(RESET_CONFIRM_TEXT, { reply_markup: resetConfirmKeyboard() });
 });
 
 bot.command("profile", async (ctx) => {
   if (!ctx.from) return;
-  const profile = getProfileByUserId(db, ctx.from.id);
-  await ctx.reply(buildProfileMessage(profile, getUserTimeZone(db, ctx.from.id)), {
-    reply_markup: profileKeyboard(),
-  });
+  const { text, reply_markup } = buildProfileView(db, ctx.from.id);
+  await ctx.reply(text, { reply_markup });
 });
 
+// Разговоры с Ням-Ням: /help посреди разговора не должна подменять его клавиатуру главной.
+const coachSessions = new CoachSessionStore();
+
 bot.command("help", async (ctx) => {
-  await ctx.reply(HELP_TEXT, { reply_markup: mainKeyboard });
+  const inCoachMode = ctx.from !== undefined && coachSessions.get(ctx.from.id) !== undefined;
+  await ctx.reply(HELP_TEXT, { reply_markup: inCoachMode ? coachKeyboard : mainKeyboard });
 });
 
 registerOnboarding(bot);
@@ -106,8 +107,9 @@ registerWeight(bot, db);
 registerWorkout(bot, db);
 registerMotivation(bot);
 registerTimeZone(bot, db);
+registerNotifications(bot, db);
 // До registerMealLogging: в режиме разговора с Ням-Ням текст и голос идут коучу.
-registerCoach(bot, db);
+registerCoach(bot, db, coachSessions);
 // Вне разговора с Ням-Ням «78.5» / «вес 78.5» — запись веса, а не еда.
 registerWeightShortcut(bot, db);
 registerMealLogging(bot, db);

@@ -7,7 +7,7 @@ import { commentOnPeriod, type CommentOnPeriod, type PeriodKind } from "../ai/co
 import { getMealsForUserOnDate } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
 import { getWeightEntriesBetween } from "../db/weightLog.js";
-import { getAllUserTimeZones, type UserTimeZone } from "../db/users.js";
+import { getAllUserSchedules, type UserSchedule, type UserTimeZone } from "../db/users.js";
 import { getWorkoutsBetween } from "../db/workouts.js";
 import { coachDiscussKeyboard } from "../features/coach/coach.js";
 import { sendMealReminders, sendWeightReminders } from "./reminders.js";
@@ -68,16 +68,18 @@ export function minutesSince(since: Date, now: Date): Date[] {
   return minutes;
 }
 
-// Пользователи, у которых в одну из минут тика по их поясу наступило time.
+// Пользователи, у которых в одну из минут тика по их поясу наступило time (общее или
+// своё у каждого — например, время вечерней сводки из «🔔 Уведомления»).
 function usersDueAt(
-  users: UserTimeZone[],
+  users: UserSchedule[],
   minutes: Date[],
-  time: string,
+  time: string | ((user: UserSchedule) => string),
   weekday?: number,
-): UserTimeZone[] {
-  return users.filter(({ timeZone }) =>
-    minutes.some((minute) => isLocalTime(minute, timeZone, time, weekday)),
-  );
+): UserSchedule[] {
+  return users.filter((user) => {
+    const userTime = typeof time === "string" ? time : time(user);
+    return minutes.some((minute) => isLocalTime(minute, user.timeZone, userTime, weekday));
+  });
 }
 
 // Комментарий Ням-Ням к отчёту. Если ИИ недоступен — отчёт уходит без комментария.
@@ -180,7 +182,11 @@ export async function runScheduledTasks(
 ): Promise<void> {
   const minutes = minutesSince(previousTick, now);
   if (minutes.length === 0) return;
-  const users = getAllUserTimeZones(db);
+  const users = getAllUserSchedules(db);
+  // Кто выключил сводку, отчёт или напоминания в «🔔 Уведомления» — тем их не шлём.
+  const withSummary = users.filter((user) => user.eveningSummaryEnabled);
+  const withWeekly = users.filter((user) => user.weeklyReportEnabled);
+  const withReminders = users.filter((user) => user.remindersEnabled);
   const tasks: Array<[string, () => Promise<void>]> = [
     [
       "вечерней сводки",
@@ -189,7 +195,7 @@ export async function runScheduledTasks(
           api,
           db,
           now,
-          usersDueAt(users, minutes, config.eveningSummaryTime),
+          usersDueAt(withSummary, minutes, (user) => user.eveningSummaryTime),
           comment,
         ),
     ],
@@ -200,21 +206,26 @@ export async function runScheduledTasks(
           api,
           db,
           now,
-          usersDueAt(users, minutes, config.weeklyReportTime, SUNDAY),
+          usersDueAt(withWeekly, minutes, config.weeklyReportTime, SUNDAY),
           comment,
         ),
     ],
     [
       "напоминаний о весе",
       () =>
-        sendWeightReminders(api, db, now, usersDueAt(users, minutes, config.weightReminderTime)),
+        sendWeightReminders(
+          api,
+          db,
+          now,
+          usersDueAt(withReminders, minutes, config.weightReminderTime),
+        ),
     ],
   ];
   const mealRemindersDue = minutes.some(
     (minute) => minute.getUTCMinutes() % MEAL_REMINDER_EVERY_MIN === 0,
   );
   if (config.mealRemindersEnabled && mealRemindersDue) {
-    tasks.push(["напоминаний о еде", () => sendMealReminders(api, db, now, users)]);
+    tasks.push(["напоминаний о еде", () => sendMealReminders(api, db, now, withReminders)]);
   }
 
   for (const [label, task] of tasks) {

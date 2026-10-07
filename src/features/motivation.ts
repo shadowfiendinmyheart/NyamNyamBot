@@ -5,6 +5,7 @@ import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
 import { getProfileByUserId, setProfileMotivation } from "../db/profiles.js";
 import { mainKeyboard } from "./mainMenu.js";
+import { noProfileReply } from "./profile.js";
 import { askMotivation, MOTIVATION_SKIP_DATA } from "./onboarding.js";
 import { voiceConfirmPattern } from "./voiceConfirm.js";
 
@@ -20,7 +21,8 @@ export function motivationConversation(db: Db, api: Api) {
 
     const profile = await conversation.external(() => getProfileByUserId(db, userId));
     if (!profile) {
-      await ctx.reply("Сначала пройдите анкету: «⚙️ Меню» → «🔄 Пройти анкету заново».");
+      const { text, reply_markup } = noProfileReply("Сначала давайте познакомимся — заполните анкету.");
+      await ctx.reply(text, { reply_markup });
       return;
     }
 
@@ -58,7 +60,7 @@ export function registerMotivation(bot: Bot<MyContext>): void {
   // уже закончился (или бот перезапускался).
   const staleAnswer = async (ctx: MyContext) => {
     await ctx.answerCallbackQuery({
-      text: "Этот вопрос уже неактуален — откройте «👤 Мой профиль» → «✍️ Зачем мне бот».",
+      text: "Этот вопрос уже неактуален — откройте «⚙️ Меню» → «👤 Профиль» → «✍️ Зачем мне бот».",
       show_alert: true,
     });
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});

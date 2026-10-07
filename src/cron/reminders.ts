@@ -5,6 +5,7 @@ import { getMealTimesBetween } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
 import { getLastReminderAt, recordReminder, type ReminderKind } from "../db/reminders.js";
 import type { UserTimeZone } from "../db/users.js";
+import { NOTIFICATIONS_PATH } from "../features/notifications.js";
 import { getWeightHistory } from "../db/weightLog.js";
 import {
   addDays,
@@ -77,11 +78,14 @@ export function findHabitualMealTimes(
   return result;
 }
 
+const REMINDERS_OFF_HINT = `\n\nНе нужно напоминать? Выключите: ${NOTIFICATIONS_PATH}.`;
+
 export function buildMealReminderMessage(slot: MealSlot, habitualMinutes: number): string {
   return (
     `🐱 Мур! ${SLOT_LABEL[slot]} у вас обычно около ${formatMinutes(habitualMinutes)}, ` +
     "а в дневнике за сегодня его пока нет. Пришлите фото, опишите текстом или голосом, " +
-    "что съели, — я посчитаю КБЖУ."
+    "что съели, — я посчитаю КБЖУ." +
+    REMINDERS_OFF_HINT
   );
 }
 
@@ -92,7 +96,8 @@ export function buildWeightReminderMessage(daysSinceLastWeight: number | undefin
       : `Вес не обновлялся уже ${daysSinceLastWeight} дн.`;
   return (
     `🐱 Мур! ${since} Встаньте на весы (лучше утром, натощак) и нажмите кнопку ниже ` +
-    "или просто пришлите число, например «78.5», — я пересчитаю норму КБЖУ."
+    "или просто пришлите число, например «78.5», — я пересчитаю норму КБЖУ." +
+    REMINDERS_OFF_HINT
   );
 }
 

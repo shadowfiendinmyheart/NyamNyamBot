@@ -153,7 +153,7 @@ function finalizeText(response: Anthropic.Message): string {
   // строка превратилась бы в «…».
   const cutOffOnTool = cutOff && response.content.some((block) => block.type === "tool_use");
   if (!text || cutOffOnTool) {
-    throw new CoachError("Ням-Ням не смогла сформулировать ответ. Попробуйте ещё раз.", {
+    throw new CoachError("🐱 Не получилось сформулировать ответ. Попробуйте ещё раз.", {
       retryable: true,
     });
   }
@@ -172,7 +172,7 @@ function toCoachError(err: unknown): CoachError {
         { retryable: true, cause: err },
       );
     default:
-      return new CoachError("Ням-Ням не смогла ответить. Попробуйте ещё раз.", {
+      return new CoachError("🐱 Не смогла ответить. Попробуйте ещё раз.", {
         retryable: false,
         cause: err,
       });

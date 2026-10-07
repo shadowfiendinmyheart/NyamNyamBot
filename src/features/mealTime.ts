@@ -108,7 +108,7 @@ export function registerMealTime(bot: Bot<MyContext>, db: Db): void {
         mealDaysAgo(updated.loggedAt, now, timeZone),
       ),
     });
-    await ctx.answerCallbackQuery({ text: "Сохранил" });
+    await ctx.answerCallbackQuery({ text: "Сохранила" });
   });
 
   bot.callbackQuery(/^meal_time_done:(\d+)$/, async (ctx) => {

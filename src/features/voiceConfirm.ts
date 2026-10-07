@@ -15,7 +15,9 @@ export type VoiceConfirmScope = "meal" | "coach" | "fix" | "motivation";
 
 // Расшифровка хранится в тексте самого сообщения с кнопками, а не в памяти:
 // callback_data ограничена 64 байтами, а так подтверждение переживает перезапуск бота.
-const PREFIX = "🎙 Распознал:\n\n";
+const PREFIX = "🎙 Услышала:\n\n";
+// Так начинались подтверждения до единого голоса Ням-Ням — кнопки под ними ещё работают.
+const LEGACY_PREFIX = "🎙 Распознал:\n\n";
 const SUFFIX = "\n\nВсё верно?";
 
 // Telegram не принимает сообщения длиннее 4096 символов. Голосовое на несколько минут
@@ -42,8 +44,9 @@ export function buildVoiceTranscriptMessage(transcript: string): string {
 }
 
 export function parseVoiceConfirmMessage(message: string | undefined): string | undefined {
-  if (!message?.startsWith(PREFIX) || !message.endsWith(SUFFIX)) return undefined;
-  const transcript = message.slice(PREFIX.length, message.length - SUFFIX.length).trim();
+  const prefix = [PREFIX, LEGACY_PREFIX].find((candidate) => message?.startsWith(candidate));
+  if (!message || !prefix || !message.endsWith(SUFFIX)) return undefined;
+  const transcript = message.slice(prefix.length, message.length - SUFFIX.length).trim();
   return transcript || undefined;
 }
 

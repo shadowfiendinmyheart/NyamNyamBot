@@ -25,6 +25,10 @@ describe("features/voiceConfirm message", () => {
     expect(parseVoiceConfirmMessage("🎙 съел борщ")).toBeUndefined();
     expect(parseVoiceConfirmMessage(buildVoiceConfirmMessage("   "))).toBeUndefined();
   });
+
+  it("still reads confirmations sent before the wording change", () => {
+    expect(parseVoiceConfirmMessage("🎙 Распознал:\n\nсъел борщ\n\nВсё верно?")).toBe("съел борщ");
+  });
 });
 
 describe("features/voiceConfirm buttons", () => {

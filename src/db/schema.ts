@@ -10,6 +10,18 @@ export const users = sqliteTable("users", {
   // IANA-таймзона пользователя («Europe/Moscow»): тип приёма пищи, границы «сегодня»,
   // время сводок и напоминаний. null — не выбрана, берётся DEFAULT_TIMEZONE.
   timezone: text("timezone"),
+  // Настройки «🔔 Уведомления» в профиле. Живут в users, а не в profiles: удаление
+  // профиля их не сбрасывает. Время сводки — «HH:MM» по поясу пользователя; null —
+  // EVENING_SUMMARY_TIME из .env.
+  eveningSummaryTime: text("evening_summary_time"),
+  eveningSummaryEnabled: integer("evening_summary_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  weeklyReportEnabled: integer("weekly_report_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  // Напоминания о весе и о пропущенном обеде/ужине.
+  remindersEnabled: integer("reminders_enabled", { mode: "boolean" }).notNull().default(true),
 });
 
 export const inviteCodes = sqliteTable("invite_codes", {

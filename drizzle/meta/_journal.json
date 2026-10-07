@@ -78,6 +78,13 @@
       "when": 1791395289064,
       "tag": "0010_add_user_timezone",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1791410134309,
+      "tag": "0011_add_notification_settings",
+      "breakpoints": true
     }
   ]
 }

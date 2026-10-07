@@ -1,4 +1,4 @@
-import type { ApiClientOptions } from "grammy";
+import { GrammyError, type ApiClientOptions } from "grammy";
 import { config } from "../config.js";
 import { proxyDispatcher, proxyHttpAgent } from "./proxy.js";
 
@@ -18,4 +18,10 @@ export async function downloadTelegramFile(filePath: string): Promise<Buffer> {
     throw new Error(`Не удалось скачать файл из Telegram: ${response.status}`);
   }
   return Buffer.from(await response.arrayBuffer());
+}
+
+// Повторное нажатие той же кнопки даёт «message is not modified»: текст и клавиатура уже
+// такие — это не ошибка.
+export function isMessageNotModified(err: unknown): boolean {
+  return err instanceof GrammyError && err.description.includes("message is not modified");
 }

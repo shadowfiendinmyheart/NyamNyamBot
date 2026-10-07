@@ -25,6 +25,7 @@ import {
   type WorkoutActivityType,
   type WorkoutIntensity,
 } from "../nutrition/calculations.js";
+import { noProfileReply } from "./profile.js";
 import { askChoice, askNumber } from "./onboarding.js";
 import { deletedEntries, deleteWorkoutWithUndo, undoDeleteKeyboard } from "./deletedEntries.js";
 import {
@@ -186,15 +187,14 @@ export function workoutActionsKeyboard(workoutId: number): InlineKeyboard {
     .text("🗑 Удалить", `delete_workout:${workoutId}`);
 }
 
-const NO_PROFILE_TEXT =
-  "Чтобы посчитать расход калорий на тренировке, нужен ваш вес — сначала заполните " +
-  "анкету: «⚙️ Меню» → «🔄 Пройти анкету заново».";
+const NO_PROFILE = noProfileReply(
+  "Чтобы посчитать расход калорий на тренировке, мне нужен ваш вес — сначала заполните анкету.",
+);
 
 const COMMAND_HINT =
-  "Запишите тренировку так: /workout бег 40 — вид активности и минуты. Можно добавить " +
-  "интенсивность: /workout плавание 1.5 ч интенсивно. Или просто /workout — спрошу по шагам.\n\n" +
-  "Силовую с подходами проще описать сообщением без команды: " +
-  "«подтягивания 3×10, отжимания 3×20, скакалка 15 минут».";
+  "🐱 Не разобрала тренировку. Проще всего описать её обычным сообщением: «бег 40 минут», " +
+  "«плавание 1.5 ч интенсивно», «подтягивания 3×10, отжимания 3×20, скакалка 15 минут». " +
+  "Или нажмите «⚙️ Меню» → «🏋️ Тренировка» — спрошу по шагам.";
 
 export interface SavedWorkout {
   workout: WorkoutEntry;
@@ -254,7 +254,7 @@ export async function replyRecognizedWorkouts(
   saved: SavedRecognizedWorkout[] | undefined,
 ): Promise<void> {
   if (!saved) {
-    await ctx.reply(NO_PROFILE_TEXT);
+    await ctx.reply(NO_PROFILE.text, { reply_markup: NO_PROFILE.reply_markup });
     return;
   }
   for (const { workout, activityLevel, durationEstimated } of saved) {
@@ -266,7 +266,7 @@ export async function replyRecognizedWorkouts(
 
 async function replyWorkoutSaved(ctx: Context, saved: SavedWorkout | undefined): Promise<void> {
   if (!saved) {
-    await ctx.reply(NO_PROFILE_TEXT);
+    await ctx.reply(NO_PROFILE.text, { reply_markup: NO_PROFILE.reply_markup });
     return;
   }
   await ctx.reply(buildWorkoutMessage(saved.workout, saved.activityLevel), {
@@ -288,7 +288,7 @@ export function workoutConversation(db: Db) {
 
     const hasProfile = await conversation.external(() => !!getProfileByUserId(db, userId));
     if (!hasProfile) {
-      await ctx.reply(NO_PROFILE_TEXT);
+      await ctx.reply(NO_PROFILE.text, { reply_markup: NO_PROFILE.reply_markup });
       return;
     }
 
@@ -408,7 +408,7 @@ export function workoutEditConversation(db: Db, api: Api) {
     });
 
     if (outcome.status === "noProfile") {
-      await ctx.reply(NO_PROFILE_TEXT);
+      await ctx.reply(NO_PROFILE.text, { reply_markup: NO_PROFILE.reply_markup });
       return;
     }
     if (outcome.status === "gone") {
@@ -427,7 +427,7 @@ export function workoutEditConversation(db: Db, api: Api) {
       }
     });
     // Исходное сообщение может быть далеко вверху чата — результат присылаем и отдельно.
-    await ctx.reply(`✅ Обновил тренировку:\n\n${text}`, {
+    await ctx.reply(`✅ Обновила тренировку:\n\n${text}`, {
       reply_markup: workoutActionsKeyboard(workoutId),
     });
   };
@@ -462,7 +462,7 @@ export function registerWorkout(bot: Bot<MyContext>, db: Db): void {
   // диалог уже закрыт (отменён, прерван сообщением или бот перезапускался).
   bot.callbackQuery(/^(wtype|wintensity):/, async (ctx) => {
     await ctx.answerCallbackQuery({
-      text: "Этот вопрос уже неактуален — начните запись заново: /workout.",
+      text: "Этот вопрос уже неактуален — начните запись заново: «⚙️ Меню» → «🏋️ Тренировка».",
       show_alert: true,
     });
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});

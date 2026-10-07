@@ -8,7 +8,13 @@ import { getUserByTelegramId, setUserTimeZone } from "../db/users.js";
 import { addWeightEntry } from "../db/weightLog.js";
 import { isValidTimeZone, parseTimeZoneText } from "../utils/timezones.js";
 import { isCancelInput, mainKeyboard } from "./mainMenu.js";
-import { ACTIVITY_LABEL, ACTIVITY_QUESTION, GOAL_LABEL, SEX_LABEL } from "./profile.js";
+import {
+  ACTIVITY_LABEL,
+  ACTIVITY_QUESTION,
+  GOAL_LABEL,
+  RESTART_ONBOARDING_PATH,
+  SEX_LABEL,
+} from "./profile.js";
 import {
   describeTimeZone,
   TIMEZONE_HINT,
@@ -639,7 +645,7 @@ export function registerOnboarding(bot: Bot<MyContext>): void {
   // уже закончился или прервался (например, бот перезапускался).
   bot.callbackQuery(ONBOARDING_CALLBACK_PATTERN, async (ctx) => {
     await ctx.answerCallbackQuery({
-      text: "Анкета уже закрыта. Пройти её заново: «⚙️ Меню» → «🔄 Пройти анкету заново».",
+      text: `Анкета уже закрыта. Пройти её заново: ${RESTART_ONBOARDING_PATH}.`,
       show_alert: true,
     });
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
@@ -793,7 +799,7 @@ export function onboardingConversation(db: Db, api: Api) {
         `У ${targets.carbGTarget.toFixed(1)}`,
       "",
       ...(motivation
-        ? ["🐱 Ням-Ням запомнила, зачем вам бот, и будет учитывать это в советах.", ""]
+        ? ["🐱 Запомнила, зачем вам бот, — буду учитывать это в советах.", ""]
         : []),
       "Присылайте фото еды, опишите текстом или голосовым сообщением, что съели.",
     ];

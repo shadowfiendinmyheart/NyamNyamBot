@@ -41,9 +41,10 @@ const GREETING = [
 const DISCUSS_GREETING = ["🐱 Давайте обсудим! Что хотите спросить?", "", MODE_HINT].join("\n");
 const EXIT_TEXT = "Возвращаюсь к записи еды 🐾 Позовите, если что — кнопка «🐱 Спросить Ням-Ням».";
 const AUTO_CLOSE_TEXT =
-  "🐱 Разговор с Ням-Ням закрыт — час без сообщений. Возвращаюсь к записи еды: " +
+  "🐱 Закрываю наш разговор — час без сообщений. Возвращаюсь к записи еды: " +
   "присылайте фото или пишите, что съели. Поговорить (или повторить последний вопрос) — " +
   "снова «🐱 Спросить Ням-Ням».";
+const NOT_TALKING_TEXT = "Мы сейчас и не разговариваем — просто присылайте, что съели 🐾";
 const DIARY_BUTTON = "📝 Записать в дневник";
 
 // Своя клавиатура в режиме разговора: видно, что сообщения уходят коучу, и выход
@@ -115,14 +116,14 @@ export function registerCoach(
     } catch (err) {
       console.error("Коуч не смог ответить:", err);
       await ctx.reply(
-        err instanceof CoachError ? err.message : "Ням-Ням не смогла ответить. Попробуйте ещё раз.",
+        err instanceof CoachError ? err.message : "🐱 Не смогла ответить. Попробуйте ещё раз.",
       );
     }
   }
 
   async function exit(ctx: MyContext): Promise<void> {
     if (!ctx.from) return;
-    await ctx.reply(store.end(ctx.from.id) ? EXIT_TEXT : "Разговор с Ням-Ням и так не открыт.", {
+    await ctx.reply(store.end(ctx.from.id) ? EXIT_TEXT : NOT_TALKING_TEXT, {
       reply_markup: mainKeyboard,
     });
   }
@@ -212,7 +213,7 @@ export function registerCoach(
     if (state === "expired") return;
     if (state === "none") {
       await ctx.reply(
-        "Разговор с Ням-Ням уже завершён. Нажмите «🐱 Спросить Ням-Ням» и задайте вопрос заново.",
+        "Наш разговор уже закончился. Нажмите «🐱 Спросить Ням-Ням» и задайте вопрос заново.",
         { reply_markup: mainKeyboard },
       );
       return;

@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { buildProfileMessage } from "./profile.js";
+import { buildProfileMessage, FILL_PROFILE_DATA, noProfileReply } from "./profile.js";
 import type { ProfileRow } from "../db/profiles.js";
 
 describe("features/profile buildProfileMessage", () => {
   it("asks to fill in the questionnaire when there is no profile", () => {
-    expect(buildProfileMessage(undefined)).toBe(
-      "Профиль ещё не заполнен. Пройдите анкету, чтобы рассчитать дневную норму.",
+    expect(buildProfileMessage(undefined)).toContain("Профиль ещё не заполнен");
+  });
+
+  it("offers a fill-in button when there is no profile", () => {
+    const reply = noProfileReply("Без анкеты не из чего считать норму.");
+    expect(reply.text).toBe(
+      "🐱 Без анкеты не из чего считать норму. Нажмите «📝 Заполнить анкету» — это пара минут.",
     );
+    expect(reply.reply_markup.inline_keyboard).toEqual([
+      [{ text: "📝 Заполнить анкету", callback_data: FILL_PROFILE_DATA }],
+    ]);
   });
 
   it("shows questionnaire answers and daily targets", () => {

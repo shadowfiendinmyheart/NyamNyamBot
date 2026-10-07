@@ -13,7 +13,7 @@ import {
 import { getWeightHistory, logWeight, type WeightLogRow } from "../db/weightLog.js";
 import type { ActivityLevel } from "../nutrition/calculations.js";
 import { askNumber } from "./onboarding.js";
-import { ACTIVITY_LABEL, ACTIVITY_QUESTION } from "./profile.js";
+import { ACTIVITY_LABEL, ACTIVITY_QUESTION, noProfileReply } from "./profile.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 type MyConversation = Conversation<MyContext>;
@@ -23,9 +23,9 @@ export const MAX_WEIGHT_KG = 300;
 const HISTORY_SIZE = 5;
 const SET_ACTIVITY_PREFIX = "setactivity:";
 
-const NO_PROFILE_TEXT =
-  "Сначала заполните анкету — без неё не из чего пересчитывать норму. " +
-  "Меню → «🔄 Пройти анкету заново».";
+const NO_PROFILE = noProfileReply(
+  "Сначала нужна анкета — без неё мне не из чего пересчитывать вашу норму.",
+);
 
 function roundWeight(value: number): number {
   return Math.round(value * 10) / 10;
@@ -127,13 +127,13 @@ function activityKeyboard(current: ActivityLevel): InlineKeyboard {
   for (const [value, label] of Object.entries(ACTIVITY_LABEL) as [ActivityLevel, string][]) {
     keyboard.text(value === current ? `✅ ${label}` : label, `${SET_ACTIVITY_PREFIX}${value}`).row();
   }
-  return keyboard.text("◀️ Назад", "menu:back");
+  return keyboard.text("◀️ Назад", "menu:profile");
 }
 
 async function sendActivityPicker(ctx: Context, db: Db, userId: number) {
   const profile = getProfileByUserId(db, userId);
   if (!profile) {
-    await ctx.reply(NO_PROFILE_TEXT);
+    await ctx.reply(NO_PROFILE.text, { reply_markup: NO_PROFILE.reply_markup });
     return;
   }
   await ctx.reply(`${ACTIVITY_QUESTION}\n\nСейчас: ${ACTIVITY_LABEL[profile.activityLevel]}`, {
@@ -143,7 +143,7 @@ async function sendActivityPicker(ctx: Context, db: Db, userId: number) {
 
 async function replyWeightLogged(ctx: Context, result: ProfileUpdateResult | undefined) {
   if (!result) {
-    await ctx.reply(NO_PROFILE_TEXT);
+    await ctx.reply(NO_PROFILE.text, { reply_markup: NO_PROFILE.reply_markup });
     return;
   }
   await ctx.reply(buildWeightLoggedMessage(result), { reply_markup: afterWeightKeyboard() });
@@ -164,7 +164,7 @@ export function weightConversation(db: Db) {
       };
     });
     if (!snapshot) {
-      await ctx.reply(NO_PROFILE_TEXT);
+      await ctx.reply(NO_PROFILE.text, { reply_markup: NO_PROFILE.reply_markup });
       return;
     }
 
@@ -193,7 +193,7 @@ export function registerWeightShortcut(bot: Bot<MyContext>, db: Db): void {
 
     if (weightKg === "invalid") {
       await ctx.reply(
-        `Не понял вес. Пример: «вес 78.5» (от ${MIN_WEIGHT_KG} до ${MAX_WEIGHT_KG} кг).`,
+        `Не поняла вес. Пример: «вес 78.5» (от ${MIN_WEIGHT_KG} до ${MAX_WEIGHT_KG} кг).`,
       );
       return;
     }
@@ -215,7 +215,7 @@ export function registerWeight(bot: Bot<MyContext>, db: Db): void {
     const weightKg = parseWeight(arg);
     if (weightKg === undefined) {
       await ctx.reply(
-        `Не понял вес. Пример: /weight 78.5 (от ${MIN_WEIGHT_KG} до ${MAX_WEIGHT_KG} кг).`,
+        `Не поняла вес. Пример: /weight 78.5 (от ${MIN_WEIGHT_KG} до ${MAX_WEIGHT_KG} кг).`,
       );
       return;
     }
@@ -251,6 +251,7 @@ export function registerWeight(bot: Bot<MyContext>, db: Db): void {
       activityLevel: level as ActivityLevel,
     });
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(result ? buildActivityChangedMessage(result) : NO_PROFILE_TEXT);
+    if (result) await ctx.editMessageText(buildActivityChangedMessage(result));
+    else await ctx.editMessageText(NO_PROFILE.text, { reply_markup: NO_PROFILE.reply_markup });
   });
 }

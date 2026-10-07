@@ -59,7 +59,7 @@ async function sendTimeZonePicker(ctx: Context, db: Db, userId: number): Promise
       "Выберите пояс кнопкой. Нет вашего города — отправьте его командой, например: " +
         "/timezone Екатеринбург, /timezone UTC+5 или /timezone МСК+2.",
     ].join("\n"),
-    { reply_markup: timeZoneKeyboard(SET_TIMEZONE_PREFIX, current).text("◀️ Назад", "menu:back") },
+    { reply_markup: timeZoneKeyboard(SET_TIMEZONE_PREFIX, current).text("◀️ Назад", "menu:profile") },
   );
 }
 

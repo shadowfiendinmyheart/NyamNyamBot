@@ -9,7 +9,7 @@ import { createUser } from "../db/users.js";
 import { addWeightEntry } from "../db/weightLog.js";
 import { createWorkout } from "../db/workouts.js";
 import { config } from "../config.js";
-import { setUserTimeZone } from "../db/users.js";
+import { setUserTimeZone, updateNotificationSettings } from "../db/users.js";
 import {
   isLocalTime,
   minutesSince,
@@ -135,6 +135,23 @@ describe("cron/scheduler runScheduledTasks", () => {
     await tick("2026-08-23T20:32:05Z", "2026-08-23T20:29:00Z");
     await tick("2026-08-23T20:33:00Z", "2026-08-23T20:32:05Z");
 
+    expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([1]);
+  });
+
+  it("шлёт сводку во время из настроек пользователя и не шлёт выключившим её", async () => {
+    addMeal(db, 1, new Date("2026-08-23T15:00:00Z"));
+    addMeal(db, 2, new Date("2026-08-23T10:00:00Z"));
+    updateNotificationSettings(db, 1, { eveningSummaryTime: "20:00" });
+    updateNotificationSettings(db, 2, { eveningSummaryEnabled: false });
+    const sendMessage = vi.fn().mockResolvedValue({});
+
+    // 20:00 в Москве — сводка alice по её времени.
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T17:00:00Z"), undefined, comment);
+    expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([1]);
+
+    // 23:30 в Москве (EVENING_SUMMARY_TIME) — alice уже не шлём, bob выключил сводку.
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T20:30:00Z"), undefined, comment);
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T18:30:00Z"), undefined, comment);
     expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([1]);
   });
 

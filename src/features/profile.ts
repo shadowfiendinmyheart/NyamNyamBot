@@ -1,3 +1,4 @@
+import { InlineKeyboard } from "grammy";
 import type { ProfileRow } from "../db/profiles.js";
 import type { ActivityLevel, Goal, Sex } from "../nutrition/calculations.js";
 import { formatTimeZone } from "../utils/timezones.js";
@@ -31,9 +32,34 @@ export const GOAL_LABEL: Record<Goal, string> = {
   gain: "Набор массы",
 };
 
+export const FILL_PROFILE_BUTTON = "📝 Заполнить анкету";
+export const FILL_PROFILE_DATA = "profile:fill";
+export const RESTART_ONBOARDING_BUTTON = "🔄 Анкета заново";
+// Как добраться до повторной анкеты — для подсказок.
+export const RESTART_ONBOARDING_PATH = `«⚙️ Меню» → «👤 Профиль» → «${RESTART_ONBOARDING_BUTTON}»`;
+
+// Кнопка под сообщениями «сначала заполните анкету».
+export function fillProfileKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text(FILL_PROFILE_BUTTON, FILL_PROFILE_DATA);
+}
+
+// «Нет профиля»: зачем нужна анкета (reason) — и кнопка, чтобы заполнить её сразу.
+export function noProfileReply(reason: string): {
+  text: string;
+  reply_markup: InlineKeyboard;
+} {
+  return {
+    text: `🐱 ${reason} Нажмите «${FILL_PROFILE_BUTTON}» — это пара минут.`,
+    reply_markup: fillProfileKeyboard(),
+  };
+}
+
 export function buildProfileMessage(profile: ProfileRow | undefined, timeZone?: string): string {
   if (!profile) {
-    return "Профиль ещё не заполнен. Пройдите анкету, чтобы рассчитать дневную норму.";
+    return (
+      "👤 Профиль ещё не заполнен. Ответьте на несколько вопросов анкеты — и я рассчитаю " +
+      "вашу дневную норму КБЖУ."
+    );
   }
 
   return [
