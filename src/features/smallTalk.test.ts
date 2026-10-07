@@ -31,6 +31,7 @@ describe("features/smallTalk detectSmallTalk", () => {
     expect(detectSmallTalk("привет, на обед был борщ")).toBeUndefined();
     expect(detectSmallTalk("бегал 40 минут")).toBeUndefined();
     expect(detectSmallTalk("ням")).toBeUndefined();
+    expect(detectSmallTalk("Мерси")).toBeUndefined();
     expect(detectSmallTalk("хорошо хорошо хорошо хорошо хорошо хорошо")).toBeUndefined();
   });
 });

@@ -54,6 +54,12 @@ export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
 
     if (toolUses.some((toolUse) => toolUse.name === OFFER_DIARY_ENTRY_TOOL)) {
       offerDiaryEntry = true;
+      // Модель написала ответ и вызвала только offer_diary_entry — результат этого
+      // инструмента ей не нужен, лишний запрос к API не делаем.
+      const hasText = response.content.some((b) => b.type === "text" && b.text.trim());
+      if (hasText && toolUses.every((toolUse) => toolUse.name === OFFER_DIARY_ENTRY_TOOL)) {
+        return { text: finalizeText(response), offerDiaryEntry };
+      }
     }
     messages.push({ role: "assistant", content: response.content });
     messages.push({

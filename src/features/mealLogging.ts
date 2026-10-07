@@ -197,18 +197,21 @@ export function buildNotRecognizedMessage(
 }
 
 // Разбирает описание еды/тренировки (текст или расшифровку голосового) и пишет в
-// дневник. Также зовётся из разговора с Ням-Ням — кнопкой «📝 Записать в дневник».
+// дневник. Также зовётся из разговора с Ням-Ням — кнопкой «📝 Записать в дневник»;
+// тогда sentAt — время исходного сообщения: «на ужин был борщ» в 23:50 должен попасть
+// в тот день, даже если кнопку нажали после полуночи.
 export async function logDescribedMeal(
   db: Db,
   ctx: MyContext,
   text: string,
   source: "text" | "voice",
+  sentAt: Date = new Date(),
 ): Promise<void> {
   if (!ctx.from) return;
 
   try {
     const userId = ctx.from.id;
-    const now = new Date();
+    const now = sentAt;
     const timeZone = getUserTimeZone(db, userId);
     const {
       food: result,
@@ -243,7 +246,8 @@ export async function logDescribedMeal(
       return;
     }
 
-    const dayLabel = formatMealDay(loggedAt, now, timeZone);
+    // Подпись дня — относительно момента ответа, а не исходного сообщения.
+    const dayLabel = formatMealDay(loggedAt, new Date(), timeZone);
     await ctx.reply(buildMealMessage(mealType, result.items, result.notes, dayLabel), {
       reply_markup: mealActionsKeyboard(mealId),
     });

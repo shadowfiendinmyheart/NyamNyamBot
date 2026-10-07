@@ -54,6 +54,18 @@ export class CoachSessionStore {
     return session;
   }
 
+  // Сессия есть в памяти, даже если уже истекла (get() её ещё не удалил). Вместе с
+  // get() отличает «только что закрылась по таймауту» от «не открывалась».
+  has(userId: number): boolean {
+    return this.sessions.has(userId);
+  }
+
+  // Продлевает сессию с началом вопроса: пока коуч отвечает, таймаут не наступит.
+  touch(userId: number): void {
+    const session = this.get(userId);
+    if (session) session.lastActivityAt = this.now();
+  }
+
   append(userId: number, question: string, answer: string): void {
     const session = this.get(userId);
     if (!session) return;

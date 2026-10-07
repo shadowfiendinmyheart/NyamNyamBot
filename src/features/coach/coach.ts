@@ -42,7 +42,8 @@ const DISCUSS_GREETING = ["🐱 Давайте обсудим! Что хотит
 const EXIT_TEXT = "Возвращаюсь к записи еды 🐾 Позовите, если что — кнопка «🐱 Спросить Ням-Ням».";
 const AUTO_CLOSE_TEXT =
   "🐱 Разговор с Ням-Ням закрыт — час без сообщений. Возвращаюсь к записи еды: " +
-  "присылайте фото или пишите, что съели. Поговорить — снова «🐱 Спросить Ням-Ням».";
+  "присылайте фото или пишите, что съели. Поговорить (или повторить последний вопрос) — " +
+  "снова «🐱 Спросить Ням-Ням».";
 const DIARY_BUTTON = "📝 Записать в дневник";
 
 // Своя клавиатура в режиме разговора: видно, что сообщения уходят коучу, и выход
@@ -77,6 +78,14 @@ export function registerCoach(
   });
   store.startSweeper();
 
+  // "expired" — сессия только что закрылась по таймауту: сообщение об этом уже ушло
+  // (onExpire), вопрос не отправляем ни коучу, ни в запись еды.
+  function sessionState(userId: number): "active" | "expired" | "none" {
+    const existed = store.has(userId);
+    if (store.get(userId)) return "active";
+    return existed ? "expired" : "none";
+  }
+
   async function answer(
     ctx: MyContext,
     userId: number,
@@ -85,6 +94,9 @@ export function registerCoach(
   ): Promise<void> {
     const session = store.get(userId);
     if (!session) return;
+    // Вопрос — уже активность: пока Ням-Ням думает, сессия не должна истечь по таймауту.
+    store.touch(userId);
+    const sentAt = new Date();
 
     try {
       const reply = await askCoach({
@@ -97,7 +109,7 @@ export function registerCoach(
       await ctx.reply(
         reply.text,
         reply.offerDiaryEntry
-          ? { reply_markup: diaryOfferKeyboard(offers.add(userId, question, source)) }
+          ? { reply_markup: diaryOfferKeyboard(offers.add({ userId, text: question, source, sentAt })) }
           : {},
       );
     } catch (err) {
@@ -153,20 +165,25 @@ export function registerCoach(
     await ctx.answerCallbackQuery();
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
     await withChatAction(ctx, "typing", () =>
-      logDescribedMeal(db, ctx, offer.text, offer.source),
+      logDescribedMeal(db, ctx, offer.text, offer.source, offer.sentAt),
     );
   });
 
   // В режиме разговора текст и голос идут коучу, иначе — дальше, в запись еды.
   bot.on("message:text", async (ctx, next) => {
     const text = ctx.message.text.trim();
-    if (!text || text.startsWith("/") || !store.get(ctx.from.id)) return next();
+    if (!text || text.startsWith("/")) return next();
+    const state = sessionState(ctx.from.id);
+    if (state === "none") return next();
+    if (state === "expired") return;
 
     await withChatAction(ctx, "typing", () => answer(ctx, ctx.from.id, text, "text"));
   });
 
   bot.on("message:voice", async (ctx, next) => {
-    if (!store.get(ctx.from.id)) return next();
+    const state = sessionState(ctx.from.id);
+    if (state === "none") return next();
+    if (state === "expired") return;
 
     try {
       await withChatAction(ctx, "typing", async () => {
@@ -191,7 +208,9 @@ export function registerCoach(
     if (text === undefined) return;
 
     // Пока пользователь думал над кнопкой, разговор мог закончиться (/exit, таймаут).
-    if (!store.get(ctx.from.id)) {
+    const state = sessionState(ctx.from.id);
+    if (state === "expired") return;
+    if (state === "none") {
       await ctx.reply(
         "Разговор с Ням-Ням уже завершён. Нажмите «🐱 Спросить Ням-Ням» и задайте вопрос заново.",
         { reply_markup: mainKeyboard },

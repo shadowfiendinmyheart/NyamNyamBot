@@ -170,6 +170,21 @@ describe("claude/coach askCoach", () => {
     expect(messages[2].content[0].is_error).toBeUndefined();
   });
 
+  it("текст вместе с одним offer_diary_entry — ответ без второго запроса", async () => {
+    createMock.mockResolvedValueOnce({
+      content: [
+        { type: "text", text: "Отличный перекус! Запишите кнопкой ниже." },
+        { type: "tool_use", id: "toolu_1", name: "offer_diary_entry", input: {} },
+      ],
+      stop_reason: "tool_use",
+    });
+
+    const reply = await askCoach({ history: [], question: "Съел яблоко", dataSource: makeDataSource() });
+
+    expect(reply).toEqual({ text: "Отличный перекус! Запишите кнопкой ниже.", offerDiaryEntry: true });
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
   it("бросает CoachError, если модель зациклилась на инструментах", async () => {
     createMock.mockResolvedValue(toolResponse("get_weight_history", { limit: 5 }));
 

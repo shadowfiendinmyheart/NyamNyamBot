@@ -98,6 +98,20 @@ describe("features/coach CoachSessionStore", () => {
     expect(expired).toEqual([1, 2]);
   });
 
+  it("touch продлевает сессию, has видит истёкшую до её удаления", () => {
+    const { store, advance } = makeStore();
+    store.start(1);
+    advance(59 * MINUTE);
+    store.touch(1);
+    advance(59 * MINUTE);
+    expect(store.get(1)).toBeDefined();
+
+    advance(61 * MINUTE);
+    expect(store.has(1)).toBe(true);
+    expect(store.get(1)).toBeUndefined();
+    expect(store.has(1)).toBe(false);
+  });
+
   it("ошибка слушателя не ломает удаление сессии", () => {
     const { store, advance } = makeStore();
     vi.spyOn(console, "error").mockImplementation(() => {});

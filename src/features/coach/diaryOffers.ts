@@ -2,20 +2,29 @@ export interface DiaryOffer {
   userId: number;
   text: string;
   source: "text" | "voice";
+  // Когда пользователь написал сообщение: запись получает это время, а не время нажатия.
+  sentAt: Date;
 }
 
 // Сообщения, которые коуч предложил записать в дневник (кнопка «📝 Записать в дневник»).
 // В callback_data влезает только номер, сам текст живёт здесь — в памяти процесса,
 // не больше maxSize последних предложений; после рестарта бота кнопка устаревает.
+// Номера начинаются с текущего времени, а не с 1, чтобы кнопка, выданная до рестарта,
+// не совпала с новым предложением и не записала чужой текст.
 export class DiaryOfferStore {
   private readonly offers = new Map<number, DiaryOffer>();
-  private nextId = 1;
+  private nextId: number;
 
-  constructor(private readonly maxSize = 500) {}
+  constructor(
+    private readonly maxSize = 500,
+    firstId = Date.now(),
+  ) {
+    this.nextId = firstId;
+  }
 
-  add(userId: number, text: string, source: DiaryOffer["source"]): number {
+  add(offer: DiaryOffer): number {
     const id = this.nextId++;
-    this.offers.set(id, { userId, text, source });
+    this.offers.set(id, offer);
     // Map хранит порядок вставки — первым идёт самое старое предложение.
     while (this.offers.size > this.maxSize) {
       const oldest = this.offers.keys().next().value;
