@@ -131,16 +131,6 @@ export function getExerciseHistory(
     .map((row) => ({ ...row.exercise, performedAt: row.performedAt }));
 }
 
-export function getUserIdsWithWorkoutsBetween(db: Db, start: Date, end: Date): number[] {
-  return db
-    .selectDistinct({ userId: schema.workouts.userId })
-    .from(schema.workouts)
-    .where(and(gte(schema.workouts.performedAt, start), lt(schema.workouts.performedAt, end)))
-    .orderBy(asc(schema.workouts.userId))
-    .all()
-    .map((row) => row.userId);
-}
-
 export function deleteWorkoutForUser(db: Db, workoutId: number, userId: number): boolean {
   const result = db
     .delete(schema.workouts)

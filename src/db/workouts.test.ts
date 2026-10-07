@@ -8,7 +8,6 @@ import {
   createWorkout,
   deleteWorkoutForUser,
   getExerciseHistory,
-  getUserIdsWithWorkoutsBetween,
   getWorkoutsBetween,
   sumBurnedKcal,
   type CreateWorkoutInput,
@@ -51,7 +50,6 @@ describe("db/workouts", () => {
     const end = new Date("2026-09-02T00:00:00Z");
 
     expect(getWorkoutsBetween(db, 1, start, end)).toHaveLength(1);
-    expect(getUserIdsWithWorkoutsBetween(db, start, end)).toEqual([1, 2]);
   });
 
   it("удаляет только свою тренировку", () => {

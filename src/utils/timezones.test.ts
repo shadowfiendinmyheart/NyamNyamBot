@@ -33,11 +33,16 @@ describe("utils/timezones parseTimeZoneText", () => {
     expect(parseTimeZoneText("Красноярск")).toBe("Asia/Novosibirsk");
     expect(parseTimeZoneText("живу в Минске")).toBe("Europe/Minsk");
     expect(parseTimeZoneText("Южно-Сахалинск")).toBe("Asia/Magadan");
+    expect(parseTimeZoneText("Нижний Новгород")).toBe("Europe/Moscow");
+    expect(parseTimeZoneText("Чита")).toBe("Asia/Yakutsk");
   });
 
   it("не угадывает, если город не знаком или городов несколько", () => {
     expect(parseTimeZoneText("Урюпинск")).toBeUndefined();
-    expect(parseTimeZoneText("между Москвой и Омском")).toBeUndefined();
+    expect(parseTimeZoneText("Нижний Тагил")).toBeUndefined();
+    expect(parseTimeZoneText("Петропавловск")).toBeUndefined();
+    expect(parseTimeZoneText("читаю")).toBeUndefined();
+    expect(parseTimeZoneText("то в Москве, то в Омске")).toBeUndefined();
     expect(parseTimeZoneText("")).toBeUndefined();
   });
 });

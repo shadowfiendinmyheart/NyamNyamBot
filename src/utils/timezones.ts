@@ -17,28 +17,29 @@ export const COMMON_TIMEZONES: Record<string, string> = {
 };
 
 // Города, которые можно написать словами: начало слова в нижнем регистре, «ё» → «е».
+// Слова до четырёх букв — только целиком: «чита» — не «читаю», «рим» — не «римма».
 const CITY_WORDS: Record<string, string[]> = {
   "Europe/Kaliningrad": ["калининград"],
   "Europe/Moscow": [
-    "москв", "питер", "петербург", "спб", "казан", "нижн", "воронеж", "ростов", "краснодар",
-    "сочи", "волгоград", "ярославл", "мск", "крым", "симферопол", "севастопол",
+    "москв", "питер", "петербург", "спб", "казан", "новгород", "воронеж", "ростов", "краснодар",
+    "сочи", "волгоград", "ярославл", "мск", "крым", "крыму", "симферопол", "севастопол",
   ],
   "Europe/Samara": ["самар", "ижевск", "ульяновск"],
   "Asia/Yekaterinburg": [
     "екатеринбург", "екб", "челябинск", "пермь", "перми", "уфа", "уфе", "уфы", "тюмен",
     "оренбург", "сургут",
   ],
-  "Asia/Omsk": ["омск"],
+  "Asia/Omsk": ["омск", "омске"],
   "Asia/Novosibirsk": [
     "новосибирск", "нск", "красноярск", "томск", "барнаул", "кемерово", "новокузнецк",
   ],
   "Asia/Irkutsk": ["иркутск", "улан-удэ", "улан"],
   "Asia/Yakutsk": ["якутск", "чита", "чите", "читы"],
   "Asia/Vladivostok": ["владивосток", "хабаровск"],
-  "Asia/Magadan": ["магадан", "сахалин", "южно"],
-  "Asia/Kamchatka": ["камчатк", "петропавловск"],
+  "Asia/Magadan": ["магадан", "сахалин", "южно-сахалинск"],
+  "Asia/Kamchatka": ["камчатк", "петропавловск-камчатск"],
   "Europe/Minsk": ["минск", "беларус"],
-  "Europe/Kyiv": ["киев", "киив", "украин"],
+  "Europe/Kyiv": ["киев", "киеве", "киив", "украин"],
   "Asia/Almaty": ["алмат", "астан", "казахстан"],
   "Asia/Tashkent": ["ташкент", "узбекистан"],
   "Asia/Bishkek": ["бишкек", "киргиз"],
@@ -46,23 +47,23 @@ const CITY_WORDS: Record<string, string[]> = {
   "Asia/Yerevan": ["ереван", "армени"],
   "Asia/Baku": ["баку", "азербайджан"],
   "Europe/Istanbul": ["стамбул", "анталь", "турци"],
-  "Asia/Dubai": ["дуба", "оаэ", "эмират"],
+  "Asia/Dubai": ["дубай", "дубае", "оаэ", "эмират"],
   "Asia/Bangkok": ["бангкок", "пхукет", "таиланд", "тайланд"],
   "Asia/Makassar": ["бали"],
   "Europe/Berlin": ["берлин", "германи", "мюнхен", "вена", "вене", "австри"],
   "Europe/Paris": ["париж", "франци"],
   "Europe/Madrid": ["мадрид", "барселон", "испани"],
-  "Europe/Rome": ["рим", "итали", "милан"],
-  "Europe/Prague": ["праг", "чехи"],
+  "Europe/Rome": ["рим", "риме", "итали", "милан"],
+  "Europe/Prague": ["прага", "праге", "чехия", "чехии"],
   "Europe/Warsaw": ["варшав", "польш"],
   "Europe/Riga": ["рига", "риге", "латви"],
-  "Europe/Vilnius": ["вильнюс", "литв"],
+  "Europe/Vilnius": ["вильнюс", "литва", "литве"],
   "Europe/Tallinn": ["таллин", "эстони"],
   "Europe/Helsinki": ["хельсинки", "финлянди"],
   "Europe/Belgrade": ["белград", "серби", "черногори"],
   "Europe/London": ["лондон", "англи", "британи"],
-  "Asia/Jerusalem": ["израил", "тель-авив", "тель", "иерусалим", "хайф"],
-  "America/New_York": ["нью-йорк", "нью"],
+  "Asia/Jerusalem": ["израил", "тель-авив", "тель", "иерусалим", "хайфа", "хайфе"],
+  "America/New_York": ["нью-йорк"],
 };
 
 export function isValidTimeZone(timeZone: string): boolean {
@@ -85,6 +86,10 @@ function offsetTimeZone(hours: number): string | undefined {
   return `Etc/GMT${hours > 0 ? "-" : "+"}${Math.abs(hours)}`;
 }
 
+function matchesCityWord(word: string, prefix: string): boolean {
+  return prefix.length <= 4 ? word === prefix : word.startsWith(prefix);
+}
+
 const MOSCOW_OFFSET_HOURS = 3;
 
 // Пояс из ответа текстом: смещение («UTC+5», «+5», «GMT-3», «МСК+2»), IANA-имя
@@ -105,7 +110,7 @@ export function parseTimeZoneText(text: string): string | undefined {
   const words = answer.split(/[^a-zа-я0-9-]+/).filter(Boolean);
   const matched = new Set<string>();
   for (const [timeZone, prefixes] of Object.entries(CITY_WORDS)) {
-    if (words.some((word) => prefixes.some((prefix) => word.startsWith(prefix)))) {
+    if (words.some((word) => prefixes.some((prefix) => matchesCityWord(word, prefix)))) {
       matched.add(timeZone);
     }
   }

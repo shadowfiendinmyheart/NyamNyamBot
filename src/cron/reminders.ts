@@ -148,6 +148,7 @@ export async function sendMealReminders(
   now: Date,
   users: UserTimeZone[],
 ): Promise<void> {
+  if (users.length === 0) return;
   const mealTimes = recentMealTimesByUser(db, now);
 
   for (const { userId, timeZone } of users) {
@@ -187,6 +188,7 @@ export async function sendWeightReminders(
   now: Date,
   users: UserTimeZone[],
 ): Promise<void> {
+  if (users.length === 0) return;
   const mealTimes = recentMealTimesByUser(db, now);
   const intervalMs = WEIGHT_REMINDER_INTERVAL_DAYS * DAY_MS;
 

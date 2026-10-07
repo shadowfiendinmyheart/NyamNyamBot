@@ -21,6 +21,7 @@ import {
   getZonedYmd,
   weekdayOf,
 } from "../utils/dates.js";
+import { isValidTimeZone } from "../utils/timezones.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 type MessageSender = Pick<Api, "sendMessage">;
@@ -40,21 +41,43 @@ function parseTime(time: string): { hour: number; minute: number } {
 const SUNDAY = 0;
 
 // Локальное время пользователя — ровно time (HH:MM), а если задан weekday, то ещё и этот
-// день недели (0 — воскресенье). Планировщик тикает раз в минуту, и каждую рассылку
-// пользователь получает в «свою» минуту.
+// день недели (0 — воскресенье).
 export function isLocalTime(now: Date, timeZone: string, time: string, weekday?: number): boolean {
   const { hour, minute } = parseTime(time);
   if (getZonedMinutesOfDay(now, timeZone) !== hour * 60 + minute) return false;
   return weekday === undefined || weekdayOf(getZonedYmd(now, timeZone)) === weekday;
 }
 
-function usersAtLocalTime(
+const MINUTE_MS = 60 * 1000;
+// Сколько пропущенных минут догоняет тик (если предыдущие опоздали или не сработали).
+const MAX_CATCH_UP_MIN = 15;
+
+function floorToMinute(date: Date): Date {
+  return new Date(Math.floor(date.getTime() / MINUTE_MS) * MINUTE_MS);
+}
+
+// Начала минут в полуинтервале (since, now], не больше MAX_CATCH_UP_MIN последних.
+export function minutesSince(since: Date, now: Date): Date[] {
+  const last = floorToMinute(now).getTime();
+  const first = Math.max(
+    floorToMinute(since).getTime() + MINUTE_MS,
+    last - (MAX_CATCH_UP_MIN - 1) * MINUTE_MS,
+  );
+  const minutes: Date[] = [];
+  for (let t = first; t <= last; t += MINUTE_MS) minutes.push(new Date(t));
+  return minutes;
+}
+
+// Пользователи, у которых в одну из минут тика по их поясу наступило time.
+function usersDueAt(
   users: UserTimeZone[],
-  now: Date,
+  minutes: Date[],
   time: string,
   weekday?: number,
 ): UserTimeZone[] {
-  return users.filter(({ timeZone }) => isLocalTime(now, timeZone, time, weekday));
+  return users.filter(({ timeZone }) =>
+    minutes.some((minute) => isLocalTime(minute, timeZone, time, weekday)),
+  );
 }
 
 // Комментарий Ням-Ням к отчёту. Если ИИ недоступен — отчёт уходит без комментария.
@@ -145,14 +168,18 @@ export async function sendWeeklyReports(
 // 15 минутам, так что окна у всех пользователей одинаково точные.
 const MEAL_REMINDER_EVERY_MIN = 15;
 
-// Один тик планировщика: каждая рассылка — тем пользователям, у кого по их поясу
-// наступило её время. Ошибка одной рассылки не мешает остальным.
+// Один тик планировщика: каждая рассылка — тем пользователям, у кого по их поясу её время
+// попало в минуты (previousTick, now]. Обычно это одна минута, но опоздавший или
+// пропущенный тик догоняется. Ошибка одной рассылки не мешает остальным.
 export async function runScheduledTasks(
   api: MessageSender,
   db: Db,
   now: Date,
+  previousTick: Date = new Date(now.getTime() - MINUTE_MS),
   comment: CommentOnPeriod = commentOnPeriod,
 ): Promise<void> {
+  const minutes = minutesSince(previousTick, now);
+  if (minutes.length === 0) return;
   const users = getAllUserTimeZones(db);
   const tasks: Array<[string, () => Promise<void>]> = [
     [
@@ -162,7 +189,7 @@ export async function runScheduledTasks(
           api,
           db,
           now,
-          usersAtLocalTime(users, now, config.eveningSummaryTime),
+          usersDueAt(users, minutes, config.eveningSummaryTime),
           comment,
         ),
     ],
@@ -173,17 +200,20 @@ export async function runScheduledTasks(
           api,
           db,
           now,
-          usersAtLocalTime(users, now, config.weeklyReportTime, SUNDAY),
+          usersDueAt(users, minutes, config.weeklyReportTime, SUNDAY),
           comment,
         ),
     ],
     [
       "напоминаний о весе",
       () =>
-        sendWeightReminders(api, db, now, usersAtLocalTime(users, now, config.weightReminderTime)),
+        sendWeightReminders(api, db, now, usersDueAt(users, minutes, config.weightReminderTime)),
     ],
   ];
-  if (config.mealRemindersEnabled && now.getUTCMinutes() % MEAL_REMINDER_EVERY_MIN === 0) {
+  const mealRemindersDue = minutes.some(
+    (minute) => minute.getUTCMinutes() % MEAL_REMINDER_EVERY_MIN === 0,
+  );
+  if (config.mealRemindersEnabled && mealRemindersDue) {
     tasks.push(["напоминаний о еде", () => sendMealReminders(api, db, now, users)]);
   }
 
@@ -197,7 +227,10 @@ export async function runScheduledTasks(
 }
 
 export function startScheduler(api: MessageSender, db: Db): void {
-  // Неверное время в .env — ошибка при запуске, а не молча пропущенные рассылки.
+  // Неверные время или пояс в .env — ошибка при запуске, а не молча пропущенные рассылки.
+  if (!isValidTimeZone(config.defaultTimezone)) {
+    throw new Error(`Некорректный DEFAULT_TIMEZONE "${config.defaultTimezone}"`);
+  }
   for (const time of [
     config.eveningSummaryTime,
     config.weeklyReportTime,
@@ -206,12 +239,15 @@ export function startScheduler(api: MessageSender, db: Db): void {
     parseTime(time);
   }
 
+  let previousTick = new Date();
   cron.schedule(
     "* * * * *",
     () => {
-      runScheduledTasks(api, db, new Date()).catch((err) => {
+      const now = new Date();
+      runScheduledTasks(api, db, now, previousTick).catch((err) => {
         console.error("Ошибка планировщика:", err);
       });
+      previousTick = now;
     },
     { name: "scheduler-tick" },
   );

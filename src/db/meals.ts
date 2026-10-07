@@ -182,16 +182,6 @@ function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-export function getUserIdsWithMealsBetween(db: Db, start: Date, end: Date): number[] {
-  return db
-    .selectDistinct({ userId: schema.meals.userId })
-    .from(schema.meals)
-    .where(and(gte(schema.meals.loggedAt, start), lt(schema.meals.loggedAt, end)))
-    .orderBy(asc(schema.meals.userId))
-    .all()
-    .map((row) => row.userId);
-}
-
 // Время всех приёмов пищи всех пользователей за период — для эвристики напоминаний.
 export function getMealTimesBetween(
   db: Db,

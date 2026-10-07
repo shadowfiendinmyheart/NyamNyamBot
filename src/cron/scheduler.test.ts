@@ -12,6 +12,7 @@ import { config } from "../config.js";
 import { setUserTimeZone } from "../db/users.js";
 import {
   isLocalTime,
+  minutesSince,
   runScheduledTasks,
   sendEveningSummaries,
   sendWeeklyReports,
@@ -66,6 +67,16 @@ describe("cron/scheduler isLocalTime", () => {
   });
 });
 
+describe("cron/scheduler minutesSince", () => {
+  it("возвращает минуты после предыдущего тика, не больше 15", () => {
+    const at = (time: string) => new Date(`2026-08-23T${time}Z`);
+    expect(minutesSince(at("20:29:00"), at("20:30:00.010"))).toEqual([at("20:30:00")]);
+    expect(minutesSince(at("20:29:00"), at("20:31:30"))).toEqual([at("20:30:00"), at("20:31:00")]);
+    expect(minutesSince(at("20:30:00.010"), at("20:30:40"))).toEqual([]);
+    expect(minutesSince(at("18:00:00"), at("20:30:00"))).toHaveLength(15);
+  });
+});
+
 describe("cron/scheduler runScheduledTasks", () => {
   let db: ReturnType<typeof makeDb>;
   const comment = vi.fn();
@@ -101,24 +112,37 @@ describe("cron/scheduler runScheduledTasks", () => {
     const sendMessage = vi.fn().mockResolvedValue({});
 
     // 23:30 в Екатеринбурге 23 августа: у bob запись — уже завтрашняя, сводки нет.
-    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T18:30:00Z"), comment);
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T18:30:00Z"), undefined, comment);
     expect(sendMessage).not.toHaveBeenCalled();
 
     // 23:30 в Москве 23 августа — сводка только alice.
-    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T20:30:00Z"), comment);
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T20:30:00Z"), undefined, comment);
     expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([1]);
 
     // 23:30 в Екатеринбурге 24 августа — сводка bob с записью 00:30.
-    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-24T18:30:00Z"), comment);
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-24T18:30:00Z"), undefined, comment);
     expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([1, 2]);
     expect(sendMessage.mock.calls[1][1]).toContain("Итого: 220 ккал");
+  });
+
+  it("догоняет опоздавший тик, но не шлёт повторно", async () => {
+    addMeal(db, 1, new Date("2026-08-23T15:00:00Z"));
+    const sendMessage = vi.fn().mockResolvedValue({});
+    const tick = (now: string, previous: string) =>
+      runScheduledTasks(api(sendMessage), db, new Date(now), new Date(previous), comment);
+
+    // Тик 23:30 по Москве опоздал до 23:32 — сводка всё равно уходит, следующий не повторяет.
+    await tick("2026-08-23T20:32:05Z", "2026-08-23T20:29:00Z");
+    await tick("2026-08-23T20:33:00Z", "2026-08-23T20:32:05Z");
+
+    expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([1]);
   });
 
   it("в другое время ничего не шлёт", async () => {
     addMeal(db, 1, new Date("2026-08-23T15:00:00Z"));
     const sendMessage = vi.fn().mockResolvedValue({});
 
-    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T20:31:00Z"), comment);
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T20:31:00Z"), undefined, comment);
 
     expect(sendMessage).not.toHaveBeenCalled();
   });
