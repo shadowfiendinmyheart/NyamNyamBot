@@ -101,6 +101,14 @@ npm run db:generate     # после правки src/db/schema.ts — сген�
 npm run build && npm test   # проверка перед закрытием тикета (tsc + vitest)
 ```
 
+## Claude Code
+
+- `/ticket [N]` — тикет из бэклога до коммита + code-review с фиксами, затем предлагает
+  следующий тикет; `/migration` — изменение схемы БД.
+- Хуки (`.claude/hooks/`): правка `.env`, `drizzle/**`, `package-lock.json` заблокирована;
+  при изменённых `.ts` перед завершением ответа прогоняется `tsc --noEmit`.
+- MCP `context7` (`.mcp.json`) — актуальная документация grammY/Drizzle/SDK.
+
 ## Текущий статус
 
 Прогресс по тикетам — в [docs/BACKLOG.md](docs/BACKLOG.md) и в git log (коммиты с префиксом `[N]`).
