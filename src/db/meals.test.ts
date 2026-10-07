@@ -11,6 +11,7 @@ import {
   getMealById,
   getMealsForUserOnDate,
   updateMeal,
+  updateMealTime,
 } from "./meals.js";
 
 function makeDb() {
@@ -226,5 +227,40 @@ describe("db/meals getMealsForUserOnDate", () => {
     expect(meals).toHaveLength(2);
     expect(meals[0]?.loggedAt).toEqual(start);
     expect(meals[1]?.loggedAt).toEqual(new Date("2026-08-23T12:00:00Z"));
+  });
+});
+
+describe("db/meals meal time", () => {
+  let db: ReturnType<typeof makeDb>;
+
+  beforeEach(() => {
+    db = makeDb();
+    createUser(db, 1, "alice");
+    createUser(db, 2, "bob");
+  });
+
+  const input = {
+    userId: 1,
+    mealType: "dinner" as const,
+    source: "text" as const,
+    description: "плов",
+    items: [{ name: "плов", weightG: 300, kcal: 480, proteinG: 15, fatG: 18, carbG: 60 }],
+  };
+
+  it("stores the given loggedAt instead of the current time", () => {
+    const loggedAt = new Date("2026-10-06T16:00:00Z");
+    const mealId = createMeal(db, { ...input, loggedAt });
+    expect(getMealById(db, mealId, 1)?.loggedAt).toEqual(loggedAt);
+  });
+
+  it("changes the time and type only for the owner", () => {
+    const mealId = createMeal(db, input);
+    const update = { loggedAt: new Date("2026-10-06T06:00:00Z"), mealType: "breakfast" as const };
+
+    expect(updateMealTime(db, mealId, 2, update)).toBe(false);
+    expect(getMealById(db, mealId, 1)?.mealType).toBe("dinner");
+
+    expect(updateMealTime(db, mealId, 1, update)).toBe(true);
+    expect(getMealById(db, mealId, 1)).toMatchObject(update);
   });
 });

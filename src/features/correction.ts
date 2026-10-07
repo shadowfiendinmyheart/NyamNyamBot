@@ -7,7 +7,14 @@ import { config } from "../config.js";
 import type { MyContext } from "../context.js";
 import { analyzeFood, type AnalyzeFoodResult, type ImageMimeType } from "../ai/foodAnalyzer.js";
 import { getMealById, updateMeal, type MealRow } from "../db/meals.js";
-import { buildMealMessage, mealActionsKeyboard, mimeTypeForFilePath, toMealItemInputs } from "./mealLogging.js";
+import { getUserTimeZone } from "../db/users.js";
+import {
+  buildMealMessage,
+  buildStoredMealMessage,
+  mealActionsKeyboard,
+  mimeTypeForFilePath,
+  toMealItemInputs,
+} from "./mealLogging.js";
 import {
   buildVoiceConfirmMessage,
   settleVoiceConfirmation,
@@ -214,7 +221,13 @@ export function correctionConversation(db: Db, api: Api) {
       return;
     }
 
-    const messageText = buildMealMessage(meal.mealType, result.items, result.notes);
+    // Из БД, а не из meal: тип и день могли поменять кнопкой «🕐 Время», пока шла правка.
+    const messageText = await conversation.external(() => {
+      const fresh = getMealById(db, mealId, userId);
+      return fresh
+        ? buildStoredMealMessage(db, fresh, getUserTimeZone(db, userId))
+        : buildMealMessage(meal.mealType, result.items, result.notes);
+    });
     await conversation.external(async () => {
       try {
         await api.editMessageText(chatId, messageId, messageText, {

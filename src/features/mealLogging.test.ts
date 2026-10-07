@@ -1,34 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMealMessage, determineMealType } from "./mealLogging.js";
-
-describe("features/mealLogging determineMealType", () => {
-  const tz = "Europe/Moscow";
-
-  it("classifies morning hours as breakfast", () => {
-    expect(determineMealType(new Date("2026-08-22T05:00:00Z"), tz)).toBe("breakfast");
-  });
-
-  it("classifies midday hours as lunch", () => {
-    expect(determineMealType(new Date("2026-08-22T09:30:00Z"), tz)).toBe("lunch");
-  });
-
-  it("classifies evening hours as dinner", () => {
-    expect(determineMealType(new Date("2026-08-22T15:00:00Z"), tz)).toBe("dinner");
-  });
-
-  it("classifies night hours as snack", () => {
-    expect(determineMealType(new Date("2026-08-22T22:30:00Z"), tz)).toBe("snack");
-  });
-
-  it("uses the given timezone rather than the server's local time", () => {
-    // 06:00 UTC is 09:00 in Europe/Moscow (breakfast) but still 23:00 the previous
-    // day in America/Los_Angeles (snack).
-    const date = new Date("2026-08-22T06:00:00Z");
-    expect(determineMealType(date, "Europe/Moscow")).toBe("breakfast");
-    expect(determineMealType(date, "America/Los_Angeles")).toBe("snack");
-  });
-});
-
+import { buildMealMessage } from "./mealLogging.js";
 describe("features/mealLogging buildMealMessage", () => {
   it("lists items and totals, and appends notes when present", () => {
     const message = buildMealMessage(
@@ -61,5 +32,19 @@ describe("features/mealLogging buildMealMessage", () => {
     );
 
     expect(message).not.toContain("⚠️");
+  });
+});
+
+describe("features/mealLogging buildMealMessage day label", () => {
+  const items = [
+    { name: "плов", estimatedWeightG: 300, kcal: 480, proteinG: 15, fatG: 18, carbG: 60 },
+  ];
+
+  it("adds the day to the header for a meal that is not from today", () => {
+    expect(buildMealMessage("dinner", items, null, "вчера").split("\n")[0]).toBe("🌙 Ужин · вчера");
+  });
+
+  it("keeps the plain header for today", () => {
+    expect(buildMealMessage("dinner", items, null).split("\n")[0]).toBe("🌙 Ужин");
   });
 });

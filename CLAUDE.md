@@ -55,6 +55,7 @@ src/
     onboarding.ts            # инвайт-код + анкета профиля (+ «зачем вам бот» для коуча)
     motivation.ts            # правка ответа «зачем вам бот» из профиля
     mealLogging.ts            # обработка фото/текста → meal + meal_items
+    mealTime.ts               # кнопка «🕐 Время»: тип приёма пищи и день записи
     correction.ts             # inline-кнопки и диалог правки оценки
     reports.ts                 # /today, /week, вечерняя сводка, недельный отчёт
     weight.ts                  # /weight, пересчёт нормы КБЖУ
@@ -70,6 +71,7 @@ src/
   utils/
     dates.ts                  # границы дня/недели в таймзоне пользователя
     timezones.ts              # частые пояса, разбор «Екатеринбург» / «UTC+5» / «МСК+2»
+    mealTime.ts               # тип и время приёма пищи: по часам или «вчера на ужин»
     proxy.ts                  # proxyDispatcher для PROXY_URL
   nutrition/
     calculations.ts           # формула Миффлина-Сан Жеора + распределение БЖУ,

@@ -15,10 +15,13 @@ import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import {
   createMeal,
   deleteMealForUser,
+  getMealItemsForMeals,
   sumNutrition,
   type MealItemInput,
+  type MealRow,
   type MealType,
 } from "../db/meals.js";
+import { determineMealType, formatMealDay, resolveMealTime } from "../utils/mealTime.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
 import { withChatAction } from "../utils/chatAction.js";
 import { replyRecognizedWorkouts, saveRecognizedWorkouts } from "./workout.js";
@@ -49,23 +52,12 @@ export const MEAL_TYPE_LABEL: Record<MealType, string> = {
   snack: "🍎 Перекус",
 };
 
-export function determineMealType(date: Date, timeZone: string): MealType {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(
-      date,
-    ),
-  );
-
-  if (hour >= 4 && hour < 11) return "breakfast";
-  if (hour >= 11 && hour < 16) return "lunch";
-  if (hour >= 16 && hour < 22) return "dinner";
-  return "snack";
-}
-
+// dayLabel — подпись дня для записи не за сегодня («вчера»), см. formatMealDay.
 export function buildMealMessage(
   mealType: MealType,
   items: FoodItem[],
   notes: string | null,
+  dayLabel: string | null = null,
 ): string {
   const totals = sumNutrition(items);
 
@@ -76,7 +68,7 @@ export function buildMealMessage(
   );
 
   const parts = [
-    MEAL_TYPE_LABEL[mealType],
+    dayLabel ? `${MEAL_TYPE_LABEL[mealType]} · ${dayLabel}` : MEAL_TYPE_LABEL[mealType],
     "",
     ...lines,
     "",
@@ -91,9 +83,35 @@ export function buildMealMessage(
   return parts.join("\n");
 }
 
+// Сообщение для уже сохранённой записи — после смены времени или правки.
+export function buildStoredMealMessage(
+  db: Db,
+  meal: MealRow,
+  timeZone: string,
+  now: Date = new Date(),
+): string {
+  const items = getMealItemsForMeals(db, [meal.id]).map((item) => ({
+    name: item.name,
+    estimatedWeightG: item.weightG,
+    kcal: item.kcal,
+    proteinG: item.proteinG,
+    fatG: item.fatG,
+    carbG: item.carbG,
+  }));
+  const notes = (meal.rawClaudeResponse as { notes?: string | null } | null)?.notes ?? null;
+  return buildMealMessage(
+    meal.mealType,
+    items,
+    notes,
+    formatMealDay(meal.loggedAt, now, timeZone),
+  );
+}
+
 export function mealActionsKeyboard(mealId: number): InlineKeyboard {
   return new InlineKeyboard()
     .text("✏️ Изменить", `correct:${mealId}`)
+    // Обработчик — в features/mealTime.ts.
+    .text("🕐 Время", `meal_time:${mealId}`)
     .text("🗑 Удалить", `delete_meal:${mealId}`)
     .row()
     // Обработчик — в features/coach: текст сообщения с оценкой становится контекстом разговора.
@@ -171,10 +189,16 @@ async function logDescribedMeal(
   const subject = source === "voice" ? "в голосовом сообщении" : "в сообщении";
 
   try {
-    const { food: result, workouts } = await analyzeMessage({ text });
     const userId = ctx.from.id;
+    const now = new Date();
+    const timeZone = getUserTimeZone(db, userId);
+    const {
+      food: result,
+      mealTime,
+      workouts,
+    } = await analyzeMessage({ text, now, timeZone });
     const hasFood = result.foodDetected && result.items.length > 0;
-    const mealType = determineMealType(new Date(), getUserTimeZone(db, userId));
+    const { loggedAt, mealType } = resolveMealTime(mealTime, now, timeZone);
 
     // Тренировки и еду пишем одной транзакцией и только потом отвечаем: если запись
     // упадёт, в дневнике не останется половины сообщения и повтор ничего не задвоит.
@@ -188,6 +212,7 @@ async function logDescribedMeal(
             description: text,
             items: toMealItemInputs(result.items),
             rawClaudeResponse: result,
+            loggedAt,
           })
         : undefined,
     }));
@@ -204,7 +229,8 @@ async function logDescribedMeal(
       return;
     }
 
-    await ctx.reply(buildMealMessage(mealType, result.items, result.notes), {
+    const dayLabel = formatMealDay(loggedAt, now, timeZone);
+    await ctx.reply(buildMealMessage(mealType, result.items, result.notes, dayLabel), {
       reply_markup: mealActionsKeyboard(mealId),
     });
   } catch (err) {

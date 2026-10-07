@@ -18,6 +18,7 @@ import {
 import { registerCoach } from "./features/coach/coach.js";
 import { correctionConversation, registerCorrection } from "./features/correction.js";
 import { registerMealLogging } from "./features/mealLogging.js";
+import { registerMealTime } from "./features/mealTime.js";
 import { motivationConversation, registerMotivation } from "./features/motivation.js";
 import { onboardingConversation, registerOnboarding } from "./features/onboarding.js";
 import { buildProfileMessage } from "./features/profile.js";
@@ -99,6 +100,7 @@ registerTimeZone(bot, db);
 // До registerMealLogging: в режиме разговора с Ням-Ням текст и голос идут коучу.
 registerCoach(bot, db);
 registerMealLogging(bot, db);
+registerMealTime(bot, db);
 registerCorrection(bot, db);
 
 try {

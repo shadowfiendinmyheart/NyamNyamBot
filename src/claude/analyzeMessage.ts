@@ -2,10 +2,13 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
 import { FoodAnalyzerError } from "../ai/foodAnalyzer.js";
 import type {
+  AnalyzeMessageInput,
   AnalyzeMessageResult,
   ExerciseEstimate,
   WorkoutEstimate,
 } from "../ai/messageAnalyzer.js";
+import { MEAL_TYPES, type MealType } from "../db/meals.js";
+import { normalizeDaysAgo } from "../utils/mealTime.js";
 import {
   MAX_WORKOUT_MIN,
   WORKOUT_ACTIVITY_TYPES,
@@ -38,15 +41,27 @@ interface DiaryEntryToolInput {
   food_detected: boolean;
   items?: AnalyzeFoodToolItem[];
   notes?: string;
+  meal_days_ago?: number;
+  meal_time?: string;
+  meal_type?: string;
   workouts?: DiaryEntryToolWorkout[];
 }
 
-export async function analyzeMessage({ text }: { text: string }): Promise<AnalyzeMessageResult> {
+export async function analyzeMessage({
+  text,
+  now,
+  timeZone,
+}: AnalyzeMessageInput): Promise<AnalyzeMessageResult> {
+  const system: Anthropic.TextBlockParam[] = [{ type: "text", text: DIARY_ENTRY_SYSTEM_PROMPT }];
+  if (now && timeZone) {
+    system.push({ type: "text", text: `Сейчас у пользователя: ${formatLocalNow(now, timeZone)}.` });
+  }
+
   const response = await getClient()
     .messages.create({
       model: config.anthropicModel,
       max_tokens: 16000,
-      system: DIARY_ENTRY_SYSTEM_PROMPT,
+      system,
       tools: [DIARY_ENTRY_TOOL],
       tool_choice: { type: "tool", name: DIARY_ENTRY_TOOL.name },
       messages: [{ role: "user", content: text }],
@@ -76,11 +91,39 @@ export async function analyzeMessage({ text }: { text: string }): Promise<Analyz
       items: (raw.items ?? []).map(mapItem),
       notes: raw.notes ?? null,
     },
+    mealTime: {
+      daysAgo: normalizeDaysAgo(raw.meal_days_ago),
+      minutesOfDay: parseClockTime(raw.meal_time),
+      mealType: MEAL_TYPES.includes(raw.meal_type as MealType) ? (raw.meal_type as MealType) : null,
+    },
     workouts: (raw.workouts ?? []).flatMap((workout) => {
       const mapped = mapWorkout(workout);
       return mapped ? [mapped] : [];
     }),
   };
+}
+
+// «вторник, 7 октября 2026 г., 21:10»
+function formatLocalNow(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(now);
+}
+
+// "09:00" → 540; некорректное время — null (запись встанет на время по умолчанию).
+export function parseClockTime(value: unknown): number | null {
+  const match = typeof value === "string" ? /^(\d{1,2}):(\d{2})$/.exec(value.trim()) : null;
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours < 24 && minutes < 60 ? hours * 60 + minutes : null;
 }
 
 // Некорректная тренировка пропускается, а не роняет весь разбор: еда из того же

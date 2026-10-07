@@ -4,7 +4,8 @@ import * as schema from "./schema.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
-export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
+export type MealType = (typeof MEAL_TYPES)[number];
 export type MealSource = "photo" | "text" | "voice";
 
 export interface MealItemInput {
@@ -24,6 +25,7 @@ export interface CreateMealInput {
   description: string;
   items: MealItemInput[];
   rawClaudeResponse?: unknown;
+  loggedAt?: Date; // по умолчанию — сейчас
 }
 
 export interface NutritionTotals {
@@ -74,6 +76,7 @@ export function createMeal(db: Db, input: CreateMealInput): number {
         fatG: totals.fatG,
         carbG: totals.carbG,
         rawClaudeResponse: input.rawClaudeResponse ?? null,
+        ...(input.loggedAt ? { loggedAt: input.loggedAt } : {}),
       })
       .returning({ id: schema.meals.id })
       .get();
@@ -176,6 +179,20 @@ export function updateMeal(
 
     return true;
   });
+}
+
+export function updateMealTime(
+  db: Db,
+  mealId: number,
+  userId: number,
+  input: { loggedAt: Date; mealType: MealType },
+): boolean {
+  const result = db
+    .update(schema.meals)
+    .set(input)
+    .where(and(eq(schema.meals.id, mealId), eq(schema.meals.userId, userId)))
+    .run();
+  return result.changes > 0;
 }
 
 function roundToOneDecimal(value: number): number {

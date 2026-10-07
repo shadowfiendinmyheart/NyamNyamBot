@@ -1,4 +1,5 @@
 import type { WorkoutActivityType, WorkoutIntensity } from "../nutrition/calculations.js";
+import type { MealType } from "../db/meals.js";
 import type { AnalyzeFoodResult } from "./foodAnalyzer.js";
 
 // Контракт разбора текстового/голосового сообщения для дневника: в одном сообщении
@@ -23,12 +24,28 @@ export interface WorkoutEstimate {
   exercises: ExerciseEstimate[]; // пусто для кардио без упражнений
 }
 
+// Когда съедена еда — только то, что пользователь назвал сам («вчера на ужин», «в 9
+// утра»); недостающее бот достраивает сам (utils/mealTime.ts).
+export interface MealTimeHint {
+  daysAgo: number; // 0 — сегодня, 1 — вчера…
+  minutesOfDay: number | null; // названное время, минуты от локальной полуночи
+  mealType: MealType | null; // названный приём пищи
+}
+
 export interface AnalyzeMessageResult {
   food: AnalyzeFoodResult;
+  mealTime: MealTimeHint;
   workouts: WorkoutEstimate[];
 }
 
-export type MessageAnalyzer = (input: { text: string }) => Promise<AnalyzeMessageResult>;
+export interface AnalyzeMessageInput {
+  text: string;
+  // Текущее время пользователя — чтобы понять «вчера», «в понедельник», «в 9 утра».
+  now?: Date;
+  timeZone?: string;
+}
+
+export type MessageAnalyzer = (input: AnalyzeMessageInput) => Promise<AnalyzeMessageResult>;
 
 // Единственная точка переключения провайдера ИИ, как в foodAnalyzer.ts.
 export { analyzeMessage } from "../claude/analyzeMessage.js";

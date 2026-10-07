@@ -160,4 +160,51 @@ describe("claude/analyzeMessage", () => {
     expect(result.workouts).toEqual([]);
     expect(result.food.foodDetected).toBe(false);
   });
+
+  it("возвращает названные день, время и приём пищи", async () => {
+    createMock.mockResolvedValue(
+      toolUseResponse({
+        food_detected: true,
+        items: [{ name: "плов", estimated_weight_g: 300, kcal: 480, protein_g: 15, fat_g: 18, carb_g: 60 }],
+        meal_days_ago: 1,
+        meal_time: "20:30",
+        meal_type: "dinner",
+        workouts: [],
+      }),
+    );
+
+    const { mealTime } = await analyzeMessage({ text: "вчера в полдевятого вечера ел плов" });
+
+    expect(mealTime).toEqual({ daysAgo: 1, minutesOfDay: 20 * 60 + 30, mealType: "dinner" });
+  });
+
+  it("отбрасывает некорректные день, время и приём пищи", async () => {
+    createMock.mockResolvedValue(
+      toolUseResponse({
+        food_detected: true,
+        items: [],
+        meal_days_ago: 40,
+        meal_time: "25:00",
+        meal_type: "brunch",
+      }),
+    );
+
+    const { mealTime } = await analyzeMessage({ text: "банан" });
+
+    expect(mealTime).toEqual({ daysAgo: 0, minutesOfDay: null, mealType: null });
+  });
+
+  it("сообщает Claude текущее время пользователя в его поясе", async () => {
+    createMock.mockResolvedValue(toolUseResponse({ food_detected: false, items: [] }));
+
+    await analyzeMessage({
+      text: "вчера на ужин ел плов",
+      now: new Date("2026-10-07T18:10:00Z"),
+      timeZone: "Europe/Moscow",
+    });
+
+    const system = JSON.stringify(createMock.mock.calls[0][0].system);
+    expect(system).toContain("среда, 7 октября 2026");
+    expect(system).toContain("21:10");
+  });
 });

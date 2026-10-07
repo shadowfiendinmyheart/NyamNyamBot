@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { MEAL_TYPES } from "../db/meals.js";
 import { WORKOUT_ACTIVITY_TYPES, WORKOUT_INTENSITIES } from "../nutrition/calculations.js";
 
 export const SYSTEM_PROMPT = `Ты — опытный нутрициолог-диетолог. Пользователь присылает фото еды и/или
@@ -65,6 +66,15 @@ export const DIARY_ENTRY_SYSTEM_PROMPT = `Ты — опытный нутрици
 - Если еды в сообщении нет, верни food_detected: false и пустой items. Не упоминай в
   notes отсутствие еды, если в сообщении есть тренировка.
 
+Когда съедено (только для еды и только если пользователь это назвал; иначе поля не
+указывай — бот запишет еду на текущее время):
+- meal_days_ago — сколько дней назад: «вчера» — 1, «позавчера» — 2, «в понедельник» —
+  по текущей дате пользователя (не больше 7). Сегодня — 0 или не указывать.
+- meal_time — время в формате ЧЧ:ММ: «в 9 утра» — 09:00, «в восемь вечера» — 20:00,
+  «в полдень» — 12:00. Расплывчатое («утром», «днём») — не время, не указывай.
+- meal_type — приём пищи: «на завтрак» — breakfast, «на обед» — lunch, «на ужин» —
+  dinner, «перекусил» — snack.
+
 Тренировки:
 - Каждую упомянутую активность верни отдельным элементом workouts. Калории НЕ считай —
   их посчитает бот по MET-таблице. Нужны только вид, длительность и интенсивность.
@@ -97,6 +107,19 @@ export const DIARY_ENTRY_TOOL: Anthropic.Tool = {
     type: "object",
     properties: {
       ...(FOOD_ANALYSIS_TOOL.input_schema.properties as Record<string, unknown>),
+      meal_days_ago: {
+        type: "integer",
+        description: "Сколько дней назад съедена еда: 1 — вчера; только если день назван",
+      },
+      meal_time: {
+        type: "string",
+        description: "Время приёма пищи ЧЧ:ММ (24 часа); только если названо",
+      },
+      meal_type: {
+        type: "string",
+        enum: [...MEAL_TYPES],
+        description: "Приём пищи, если назван: «на завтрак», «на ужин», «перекусил»",
+      },
       workouts: {
         type: "array",
         description: "Физическая активность из сообщения; пустой массив, если её нет",
