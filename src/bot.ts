@@ -22,7 +22,9 @@ import { motivationConversation, registerMotivation } from "./features/motivatio
 import { onboardingConversation, registerOnboarding } from "./features/onboarding.js";
 import { buildProfileMessage } from "./features/profile.js";
 import { getProfileByUserId } from "./db/profiles.js";
+import { getUserTimeZone } from "./db/users.js";
 import { registerReports } from "./features/reports.js";
+import { registerTimeZone } from "./features/timezone.js";
 import { registerWeight, weightConversation } from "./features/weight.js";
 import { registerWorkout, workoutConversation } from "./features/workout.js";
 import { telegramClientOptions } from "./utils/telegram.js";
@@ -78,7 +80,9 @@ bot.command("reset", async (ctx) => {
 bot.command("profile", async (ctx) => {
   if (!ctx.from) return;
   const profile = getProfileByUserId(db, ctx.from.id);
-  await ctx.reply(buildProfileMessage(profile), { reply_markup: profileKeyboard() });
+  await ctx.reply(buildProfileMessage(profile, getUserTimeZone(db, ctx.from.id)), {
+    reply_markup: profileKeyboard(),
+  });
 });
 
 bot.command("help", async (ctx) => {
@@ -91,6 +95,7 @@ registerMainMenu(bot, db);
 registerWeight(bot, db);
 registerWorkout(bot, db);
 registerMotivation(bot);
+registerTimeZone(bot, db);
 // До registerMealLogging: в режиме разговора с Ням-Ням текст и голос идут коучу.
 registerCoach(bot, db);
 registerMealLogging(bot, db);

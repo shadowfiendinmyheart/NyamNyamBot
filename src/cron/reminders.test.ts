@@ -12,6 +12,7 @@ import { addWeightEntry } from "../db/weightLog.js";
 import { findHabitualMealTimes, sendMealReminders, sendWeightReminders } from "./reminders.js";
 
 const TZ = "Europe/Moscow";
+const USERS = [1, 2, 3].map((userId) => ({ userId, timeZone: TZ }));
 
 function makeDb() {
   const sqlite = new Database(":memory:");
@@ -88,7 +89,7 @@ describe("cron/reminders sendMealReminders", () => {
   });
 
   it("напоминает через час после привычного времени, если ничего не записано", async () => {
-    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), TZ);
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), USERS);
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage.mock.calls[0][0]).toBe(1);
@@ -96,8 +97,8 @@ describe("cron/reminders sendMealReminders", () => {
   });
 
   it("не напоминает раньше срока и слишком поздно", async () => {
-    await sendMealReminders({ sendMessage } as never, db, msk(28, "13:45"), TZ);
-    await sendMealReminders({ sendMessage } as never, db, msk(28, "16:00"), TZ);
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "13:45"), USERS);
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "16:00"), USERS);
 
     expect(sendMessage).not.toHaveBeenCalled();
   });
@@ -105,7 +106,7 @@ describe("cron/reminders sendMealReminders", () => {
   it("не напоминает, если с начала окна обеда уже что-то записано", async () => {
     addMeal(db, 1, msk(28, "11:30"));
 
-    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), TZ);
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), USERS);
 
     expect(sendMessage).not.toHaveBeenCalled();
   });
@@ -113,14 +114,29 @@ describe("cron/reminders sendMealReminders", () => {
   it("завтрак не отменяет напоминание об обеде", async () => {
     addMeal(db, 1, msk(28, "09:00"));
 
-    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), TZ);
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), USERS);
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("считает привычки и окна по поясу пользователя", async () => {
+    // У bob в Екатеринбурге (UTC+5) обед около 13:00 по местному времени (11:00 по Москве).
+    for (const day of [25, 26, 27]) addMeal(db, 2, msk(day, "11:00"));
+    const users = [
+      { userId: 1, timeZone: TZ },
+      { userId: 2, timeZone: "Asia/Yekaterinburg" },
+    ];
+
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "12:00"), users);
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage.mock.calls[0][0]).toBe(2);
+    expect(sendMessage.mock.calls[0][1]).toContain("Обед у вас обычно около 13:00");
+  });
+
   it("напоминает не больше раза в день", async () => {
-    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), TZ);
-    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:15"), TZ);
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), USERS);
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:15"), USERS);
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
   });
@@ -129,8 +145,8 @@ describe("cron/reminders sendMealReminders", () => {
     sendMessage.mockRejectedValue(new Error("Forbidden: bot was blocked by the user"));
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), TZ);
-    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:15"), TZ);
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:00"), USERS);
+    await sendMealReminders({ sendMessage } as never, db, msk(28, "14:15"), USERS);
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
     consoleError.mockRestore();
@@ -153,7 +169,7 @@ describe("cron/reminders sendWeightReminders", () => {
   it("напоминает, если вес не обновлялся неделю, с кнопкой записи", async () => {
     addWeightEntry(db, 1, 60, msk(20, "08:00"));
 
-    await sendWeightReminders({ sendMessage } as never, db, now, TZ);
+    await sendWeightReminders({ sendMessage } as never, db, now, USERS);
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage.mock.calls[0][1]).toContain("Вес не обновлялся уже 8 дн.");
@@ -163,7 +179,7 @@ describe("cron/reminders sendWeightReminders", () => {
   it("не напоминает, если вес свежий", async () => {
     addWeightEntry(db, 1, 60, msk(25, "08:00"));
 
-    await sendWeightReminders({ sendMessage } as never, db, now, TZ);
+    await sendWeightReminders({ sendMessage } as never, db, now, USERS);
 
     expect(sendMessage).not.toHaveBeenCalled();
   });
@@ -171,10 +187,10 @@ describe("cron/reminders sendWeightReminders", () => {
   it("не напоминает чаще раза в неделю", async () => {
     recordReminder(db, 1, "weight", msk(23, "09:00"));
 
-    await sendWeightReminders({ sendMessage } as never, db, now, TZ);
+    await sendWeightReminders({ sendMessage } as never, db, now, USERS);
     expect(sendMessage).not.toHaveBeenCalled();
 
-    await sendWeightReminders({ sendMessage } as never, db, msk(30, "09:00"), TZ);
+    await sendWeightReminders({ sendMessage } as never, db, msk(30, "09:00"), USERS);
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage.mock.calls[0][1]).toContain("ещё ни разу не записывали вес");
   });
@@ -187,7 +203,7 @@ describe("cron/reminders sendWeightReminders", () => {
     addMeal(db, 3, msk(1, "13:00"));
     addWeightEntry(db, 1, 60, msk(27, "08:00"));
 
-    await sendWeightReminders({ sendMessage } as never, db, now, TZ);
+    await sendWeightReminders({ sendMessage } as never, db, now, USERS);
 
     expect(sendMessage).not.toHaveBeenCalled();
   });

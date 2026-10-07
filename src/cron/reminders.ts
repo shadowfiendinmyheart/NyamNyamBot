@@ -1,9 +1,10 @@
 import { InlineKeyboard, type Api } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
-import { getMealTimesBetween, getUserIdsWithMealsBetween } from "../db/meals.js";
+import { getMealTimesBetween } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
 import { getLastReminderAt, recordReminder, type ReminderKind } from "../db/reminders.js";
+import type { UserTimeZone } from "../db/users.js";
 import { getWeightHistory } from "../db/weightLog.js";
 import {
   addDays,
@@ -126,30 +127,44 @@ function groupByUser(rows: Array<{ userId: number; loggedAt: Date }>): Map<numbe
   return byUser;
 }
 
+// Время приёмов пищи по пользователям за последние HABIT_LOOKBACK_DAYS дней с запасом:
+// точные границы у каждого пользователя свои — по его поясу.
+function recentMealTimesByUser(db: Db, now: Date): Map<number, Date[]> {
+  const start = new Date(now.getTime() - (HABIT_LOOKBACK_DAYS + 2) * DAY_MS);
+  return groupByUser(getMealTimesBetween(db, start, new Date(now.getTime() + DAY_MS)));
+}
+
+function lookbackStartFor(now: Date, timeZone: string): Date {
+  const today = getZonedYmd(now, timeZone);
+  return getDayBoundsUtc(addDays(today, -HABIT_LOOKBACK_DAYS), timeZone).start;
+}
+
 // Запускается часто (раз в 15 минут): напоминает о пропущенном обеде/ужине, если
 // привычное время прошло больше часа назад, а с начала окна слота ничего не записано.
+// Привычки и окна считаются по поясу каждого пользователя.
 export async function sendMealReminders(
   api: MessageSender,
   db: Db,
   now: Date,
-  timeZone: string,
+  users: UserTimeZone[],
 ): Promise<void> {
-  const todayYmd = getZonedYmd(now, timeZone);
-  const today = getTodayBoundsUtc(now, timeZone);
-  const lookbackStart = getDayBoundsUtc(addDays(todayYmd, -HABIT_LOOKBACK_DAYS), timeZone).start;
-  const history = groupByUser(getMealTimesBetween(db, lookbackStart, today.start));
-  const todayMeals = groupByUser(getMealTimesBetween(db, today.start, today.end));
-  const nowMinutes = getZonedMinutesOfDay(now, timeZone);
+  const mealTimes = recentMealTimesByUser(db, now);
 
-  for (const [userId, mealTimes] of history) {
-    const habits = findHabitualMealTimes(mealTimes, timeZone);
+  for (const { userId, timeZone } of users) {
+    const times = mealTimes.get(userId) ?? [];
+    const today = getTodayBoundsUtc(now, timeZone);
+    const lookbackStart = lookbackStartFor(now, timeZone);
+    const history = times.filter((time) => time >= lookbackStart && time < today.start);
+    const todayMeals = times.filter((time) => time >= today.start && time < today.end);
+    const nowMinutes = getZonedMinutesOfDay(now, timeZone);
+    const habits = findHabitualMealTimes(history, timeZone);
 
     for (const [slot, habitual] of Object.entries(habits) as Array<[MealSlot, number]>) {
       const due = habitual + MEAL_REMINDER_DELAY_MIN;
       if (nowMinutes < due || nowMinutes >= due + MEAL_REMINDER_WINDOW_MIN) continue;
 
       const slotStart = MEAL_SLOT_WINDOWS[slot].from;
-      const loggedSinceSlotStart = (todayMeals.get(userId) ?? []).some(
+      const loggedSinceSlotStart = todayMeals.some(
         (time) => getZonedMinutesOfDay(time, timeZone) >= slotStart,
       );
       if (loggedSinceSlotStart) continue;
@@ -162,20 +177,25 @@ export async function sendMealReminders(
   }
 }
 
-// Раз в день: напоминает записать вес, если он не обновлялся неделю и больше. Только
-// пользователям с профилем (без него вес не записать) и с записями еды за последние
-// HABIT_LOOKBACK_DAYS дней — забросивших бота не тревожим. Не чаще раза в неделю.
+// Раз в день (в WEIGHT_REMINDER_TIME по поясу пользователя): напоминает записать вес,
+// если он не обновлялся неделю и больше. Только пользователям с профилем (без него вес
+// не записать) и с записями еды за последние HABIT_LOOKBACK_DAYS дней — забросивших
+// бота не тревожим. Не чаще раза в неделю.
 export async function sendWeightReminders(
   api: MessageSender,
   db: Db,
   now: Date,
-  timeZone: string,
+  users: UserTimeZone[],
 ): Promise<void> {
-  const todayYmd = getZonedYmd(now, timeZone);
-  const lookbackStart = getDayBoundsUtc(addDays(todayYmd, -HABIT_LOOKBACK_DAYS), timeZone).start;
+  const mealTimes = recentMealTimesByUser(db, now);
   const intervalMs = WEIGHT_REMINDER_INTERVAL_DAYS * DAY_MS;
 
-  for (const userId of getUserIdsWithMealsBetween(db, lookbackStart, now)) {
+  for (const { userId, timeZone } of users) {
+    const lookbackStart = lookbackStartFor(now, timeZone);
+    const recentlyActive = (mealTimes.get(userId) ?? []).some(
+      (time) => time >= lookbackStart && time < now,
+    );
+    if (!recentlyActive) continue;
     if (!getProfileByUserId(db, userId)) continue;
 
     const lastWeight = getWeightHistory(db, userId, 1)[0];

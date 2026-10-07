@@ -4,9 +4,17 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
 import { getProfileByUserId, upsertProfile } from "../db/profiles.js";
+import { getUserByTelegramId, setUserTimeZone } from "../db/users.js";
 import { addWeightEntry } from "../db/weightLog.js";
+import { isValidTimeZone, parseTimeZoneText } from "../utils/timezones.js";
 import { isCancelInput, mainKeyboard } from "./mainMenu.js";
 import { ACTIVITY_LABEL, ACTIVITY_QUESTION, GOAL_LABEL, SEX_LABEL } from "./profile.js";
+import {
+  describeTimeZone,
+  TIMEZONE_HINT,
+  TIMEZONE_QUESTION,
+  timeZoneKeyboard,
+} from "./timezone.js";
 import {
   calculateDailyTargets,
   type ActivityLevel,
@@ -184,7 +192,7 @@ function backData(step: number): string {
   return `onb:back:${step}`;
 }
 // Префиксы кнопок анкеты — по ним узнаём нажатия под уже пройденными вопросами.
-export const ONBOARDING_CALLBACK_PATTERN = /^(sex|activity|goal|onb):/;
+export const ONBOARDING_CALLBACK_PATTERN = /^(sex|activity|goal|tz|onb):/;
 
 export const BACK = Symbol("back");
 export type Back = typeof BACK;
@@ -454,6 +462,42 @@ function askOnboardingNumber(
   );
 }
 
+const TIMEZONE_PREFIX = "tz:";
+
+// Часовой пояс: частые — кнопками, остальные — городом или смещением текстом.
+function askOnboardingTimeZone(
+  conversation: MyConversation,
+  ctx: Context,
+  api: Api,
+  frame: StepFrame,
+  mode: OnboardingMode,
+  current: string | undefined,
+): Promise<string | Back> {
+  return askQuestion<string>(
+    conversation,
+    ctx,
+    api,
+    {
+      text: TIMEZONE_QUESTION,
+      frame,
+      keyboard: timeZoneKeyboard(TIMEZONE_PREFIX, current),
+      fromCallback: (data) => {
+        const timeZone = data.startsWith(TIMEZONE_PREFIX)
+          ? data.slice(TIMEZONE_PREFIX.length)
+          : undefined;
+        return timeZone !== undefined && isValidTimeZone(timeZone) ? timeZone : undefined;
+      },
+      fromText: (answer) => {
+        const timeZone = parseTimeZoneText(answer);
+        return timeZone ? { value: timeZone } : { hint: TIMEZONE_HINT };
+      },
+      answerLabel: (timeZone) => describeTimeZone(timeZone),
+      nonTextHint: TIMEZONE_HINT,
+    },
+    mode,
+  );
+}
+
 export const MAX_MOTIVATION_LENGTH = 1500;
 
 export const MOTIVATION_QUESTION = [
@@ -609,6 +653,7 @@ interface OnboardingAnswers {
   weightKg?: number;
   activityLevel?: ActivityLevel;
   goal?: Goal;
+  timeZone?: string;
   motivation?: string | null;
 }
 
@@ -620,6 +665,7 @@ const ANSWER_KEYS: Record<keyof OnboardingAnswers, true> = {
   weightKg: true,
   activityLevel: true,
   goal: true,
+  timeZone: true,
   motivation: true,
 };
 
@@ -637,6 +683,9 @@ export function onboardingConversation(db: Db, api: Api) {
     // Повторную анкету (профиль уже есть) можно отменить, и прежний ответ «зачем вам бот»
     // можно оставить как есть. Первую нужно пройти: без неё не посчитать норму.
     const previous = await conversation.external(() => getProfileByUserId(db, userId));
+    const previousTimeZone = await conversation.external(
+      () => getUserByTelegramId(db, userId)?.timezone ?? undefined,
+    );
     const mode: OnboardingMode = previous
       ? { cancel: { cancelledText: "Анкета отменена — профиль остался прежним." } }
       : {};
@@ -691,6 +740,10 @@ export function onboardingConversation(db: Db, api: Api) {
         prefix: "goal",
       }),
       async (frame) =>
+        save("timeZone")(
+          await askOnboardingTimeZone(conversation, ctx, api, frame, mode, previousTimeZone),
+        ),
+      async (frame) =>
         save("motivation")(
           await askMotivation(conversation, ctx, api, previous?.motivation ?? null, {
             kind: "questionnaire",
@@ -712,7 +765,7 @@ export function onboardingConversation(db: Db, api: Api) {
 
     // Сюда доходим, только пройдя все шаги, — каждый записал ответ.
     if (!isComplete(answers)) throw new Error("Анкета завершилась без всех ответов");
-    const { sex, age, heightCm, weightKg, activityLevel, goal, motivation } = answers;
+    const { sex, age, heightCm, weightKg, activityLevel, goal, timeZone, motivation } = answers;
     const targets = calculateDailyTargets({ sex, age, heightCm, weightKg, activityLevel, goal });
 
     await conversation.external(() =>
@@ -728,6 +781,7 @@ export function onboardingConversation(db: Db, api: Api) {
           ...targets,
         });
         addWeightEntry(db, userId, weightKg);
+        setUserTimeZone(db, userId, timeZone);
       }),
     );
 

@@ -7,6 +7,9 @@ export const users = sqliteTable("users", {
   invitedAt: integer("invited_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
+  // IANA-таймзона пользователя («Europe/Moscow»): тип приёма пищи, границы «сегодня»,
+  // время сводок и напоминаний. null — не выбрана, берётся DEFAULT_TIMEZONE.
+  timezone: text("timezone"),
 });
 
 export const inviteCodes = sqliteTable("invite_codes", {

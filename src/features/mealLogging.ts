@@ -2,7 +2,7 @@ import path from "node:path";
 import { Bot, InlineKeyboard } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
-import { config } from "../config.js";
+import { getUserTimeZone } from "../db/users.js";
 import type { MyContext } from "../context.js";
 import {
   analyzeFood,
@@ -174,7 +174,7 @@ async function logDescribedMeal(
     const { food: result, workouts } = await analyzeMessage({ text });
     const userId = ctx.from.id;
     const hasFood = result.foodDetected && result.items.length > 0;
-    const mealType = determineMealType(new Date(), config.defaultTimezone);
+    const mealType = determineMealType(new Date(), getUserTimeZone(db, userId));
 
     // Тренировки и еду пишем одной транзакцией и только потом отвечаем: если запись
     // упадёт, в дневнике не останется половины сообщения и повтор ничего не задвоит.
@@ -279,7 +279,7 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
           return;
         }
 
-        const mealType = determineMealType(new Date(), config.defaultTimezone);
+        const mealType = determineMealType(new Date(), getUserTimeZone(db, ctx.from.id));
         const mealId = createMeal(db, {
           userId: ctx.from.id,
           mealType,

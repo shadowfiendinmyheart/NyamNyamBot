@@ -58,15 +58,18 @@ src/
     correction.ts             # inline-кнопки и диалог правки оценки
     reports.ts                 # /today, /week, вечерняя сводка, недельный отчёт
     weight.ts                  # /weight, пересчёт нормы КБЖУ
+    timezone.ts                # «🕐 Часовой пояс» в профиле и /timezone
     workout.ts                 # /workout, запись тренировок (workoutFormat.ts — подписи)
     coach/                     # «🐱 Спросить Ням-Ням»: режим разговора (coach.ts),
                                # сессии в памяти (session.ts), данные для ИИ (dataSource.ts)
   cron/
-    scheduler.ts              # node-cron: вечерняя сводка и недельный отчёт + комментарий коуча
+    scheduler.ts              # node-cron, поминутный тик: сводки и напоминания в локальное
+                              # время каждого пользователя + комментарий коуча
   openai/
     transcribeAudio.ts        # реализация Transcriber (OpenAI)
   utils/
     dates.ts                  # границы дня/недели в таймзоне пользователя
+    timezones.ts              # частые пояса, разбор «Екатеринбург» / «UTC+5» / «МСК+2»
     proxy.ts                  # proxyDispatcher для PROXY_URL
   nutrition/
     calculations.ts           # формула Миффлина-Сан Жеора + распределение БЖУ,
@@ -85,7 +88,8 @@ Dockerfile
 - Любая денежная/числовая величина КБЖУ — целые ккал, граммы БЖУ с одним знаком после
   запятой.
 - Время/даты — храним в UTC, отображаем в таймзоне пользователя (`users.timezone`,
-  дефолт из `DEFAULT_TIMEZONE`).
+  `null` — `DEFAULT_TIMEZONE`); пояс пользователя — через `getUserTimeZone`, не
+  `config.defaultTimezone`.
 - Новая функциональность добавляется по одному тикету из `docs/BACKLOG.md` за раз —
   каждый тикет должен собираться (`npm run build`) и, где применимо, покрываться тестом
   (`npm test`) до перехода к следующему.

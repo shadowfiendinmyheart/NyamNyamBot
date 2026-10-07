@@ -1,7 +1,7 @@
 import { Bot, InlineKeyboard } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../../db/schema.js";
-import { config } from "../../config.js";
+import { getUserTimeZone } from "../../db/users.js";
 import type { MyContext } from "../../context.js";
 import { askCoach, CoachError } from "../../ai/coach.js";
 import { withChatAction } from "../../utils/chatAction.js";
@@ -58,7 +58,7 @@ export function registerCoach(
         history: session.history,
         question,
         context: session.context,
-        dataSource: createCoachDataSource(db, userId, config.defaultTimezone),
+        dataSource: createCoachDataSource(db, userId, getUserTimeZone(db, userId)),
       });
       store.append(userId, question, reply);
       await ctx.reply(reply, { reply_markup: coachExitKeyboard() });

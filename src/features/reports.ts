@@ -1,7 +1,7 @@
 import { Bot } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
-import { config } from "../config.js";
+import { getUserTimeZone } from "../db/users.js";
 import type { MyContext } from "../context.js";
 import { getMealsForUserOnDate, sumNutrition, type MealRow } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
@@ -191,13 +191,12 @@ export function buildWeeklyReport(
 export async function sendTodayReport(ctx: MyContext, db: Db): Promise<void> {
   if (!ctx.from) return;
 
-  const { start, end } = getTodayBoundsUtc(new Date(), config.defaultTimezone);
+  const timeZone = getUserTimeZone(db, ctx.from.id);
+  const { start, end } = getTodayBoundsUtc(new Date(), timeZone);
   const meals = getMealsForUserOnDate(db, ctx.from.id, start, end);
   const workouts = getWorkoutsBetween(db, ctx.from.id, start, end);
   const profile = getProfileByUserId(db, ctx.from.id);
-  await ctx.reply(
-    buildTodayReport(meals, config.defaultTimezone, profile, undefined, workouts),
-  );
+  await ctx.reply(buildTodayReport(meals, timeZone, profile, undefined, workouts));
 }
 
 export function registerReports(bot: Bot<MyContext>, db: Db): void {

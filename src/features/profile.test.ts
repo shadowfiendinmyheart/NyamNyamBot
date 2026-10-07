@@ -62,5 +62,8 @@ describe("features/profile buildProfileMessage", () => {
     };
 
     expect(buildProfileMessage(profile)).toContain("💭 Зачем мне бот:\nВрач сказал снизить сахар");
+    expect(buildProfileMessage(profile, "Asia/Yekaterinburg")).toContain(
+      "Часовой пояс: Екатеринбург (UTC+5)",
+    );
   });
 });

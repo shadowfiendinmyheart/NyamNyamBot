@@ -1,5 +1,6 @@
 import type { ProfileRow } from "../db/profiles.js";
 import type { ActivityLevel, Goal, Sex } from "../nutrition/calculations.js";
+import { formatTimeZone } from "../utils/timezones.js";
 
 export const SEX_LABEL: Record<Sex, string> = {
   male: "Мужской",
@@ -30,7 +31,7 @@ export const GOAL_LABEL: Record<Goal, string> = {
   gain: "Набор массы",
 };
 
-export function buildProfileMessage(profile: ProfileRow | undefined): string {
+export function buildProfileMessage(profile: ProfileRow | undefined, timeZone?: string): string {
   if (!profile) {
     return "Профиль ещё не заполнен. Пройдите анкету, чтобы рассчитать дневную норму.";
   }
@@ -44,6 +45,7 @@ export function buildProfileMessage(profile: ProfileRow | undefined): string {
     `Вес: ${profile.weightKg} кг`,
     `Активность: ${ACTIVITY_LABEL[profile.activityLevel]}`,
     `Цель: ${GOAL_LABEL[profile.goal]}`,
+    ...(timeZone ? [`Часовой пояс: ${formatTimeZone(timeZone)}`] : []),
     "",
     profile.motivation ? `💭 Зачем мне бот:\n${profile.motivation}` : "💭 Зачем мне бот: не указано",
     "",

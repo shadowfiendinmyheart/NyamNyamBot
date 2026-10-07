@@ -3,6 +3,7 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
 import { deleteProfile, getProfileByUserId } from "../db/profiles.js";
+import { getUserTimeZone } from "../db/users.js";
 import { buildProfileMessage } from "./profile.js";
 import { sendTodayReport } from "./reports.js";
 
@@ -39,6 +40,7 @@ export const HELP_TEXT = [
   "/workout — записать тренировку (или сразу: /workout бег 40)",
   "/weight — записать текущий вес и пересчитать норму",
   "/activity — изменить уровень активности (например, если начали тренироваться)",
+  "/timezone — часовой пояс (или сразу: /timezone Екатеринбург, /timezone UTC+5)",
 ].join("\n");
 
 export const WELCOME_BACK_TEXT = [
@@ -76,6 +78,7 @@ export function profileKeyboard(): InlineKeyboard {
     .text("🏃 Активность", "menu:activity")
     .row()
     .text("✍️ Зачем мне бот", "menu:motivation")
+    .text("🕐 Часовой пояс", "menu:timezone")
     .row()
     .text("🔄 Пройти анкету заново", "menu:restart")
     .row()
@@ -108,7 +111,9 @@ export function registerMainMenu(bot: Bot<MyContext>, db: Db): void {
   bot.callbackQuery("menu:profile", async (ctx) => {
     if (!ctx.from) return;
     const profile = getProfileByUserId(db, ctx.from.id);
-    await ctx.editMessageText(buildProfileMessage(profile), { reply_markup: profileKeyboard() });
+    await ctx.editMessageText(buildProfileMessage(profile, getUserTimeZone(db, ctx.from.id)), {
+      reply_markup: profileKeyboard(),
+    });
     await ctx.answerCallbackQuery();
   });
 

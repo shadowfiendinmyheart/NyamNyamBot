@@ -4,15 +4,23 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
 import { commentOnPeriod, type CommentOnPeriod, type PeriodKind } from "../ai/coach.js";
-import { getMealsForUserOnDate, getUserIdsWithMealsBetween } from "../db/meals.js";
+import { getMealsForUserOnDate } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
 import { getWeightEntriesBetween } from "../db/weightLog.js";
-import { getUserIdsWithWorkoutsBetween, getWorkoutsBetween } from "../db/workouts.js";
+import { getAllUserTimeZones, type UserTimeZone } from "../db/users.js";
+import { getWorkoutsBetween } from "../db/workouts.js";
 import { coachDiscussKeyboard } from "../features/coach/coach.js";
 import { sendMealReminders, sendWeightReminders } from "./reminders.js";
 import { createCoachDataSource } from "../features/coach/dataSource.js";
 import { buildTodayReport, buildWeeklyReport } from "../features/reports.js";
-import { formatYmd, getTodayBoundsUtc, getWeekBoundsUtc } from "../utils/dates.js";
+import {
+  formatYmd,
+  getTodayBoundsUtc,
+  getWeekBoundsUtc,
+  getZonedMinutesOfDay,
+  getZonedYmd,
+  weekdayOf,
+} from "../utils/dates.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 type MessageSender = Pick<Api, "sendMessage">;
@@ -29,25 +37,24 @@ function parseTime(time: string): { hour: number; minute: number } {
   return { hour, minute };
 }
 
-// "23:30" → "30 23 * * *"
-export function timeToDailyCron(time: string): string {
+const SUNDAY = 0;
+
+// Локальное время пользователя — ровно time (HH:MM), а если задан weekday, то ещё и этот
+// день недели (0 — воскресенье). Планировщик тикает раз в минуту, и каждую рассылку
+// пользователь получает в «свою» минуту.
+export function isLocalTime(now: Date, timeZone: string, time: string, weekday?: number): boolean {
   const { hour, minute } = parseTime(time);
-  return `${minute} ${hour} * * *`;
+  if (getZonedMinutesOfDay(now, timeZone) !== hour * 60 + minute) return false;
+  return weekday === undefined || weekdayOf(getZonedYmd(now, timeZone)) === weekday;
 }
 
-// "21:00" → "0 21 * * 0" (воскресенье)
-export function timeToSundayCron(time: string): string {
-  const { hour, minute } = parseTime(time);
-  return `${minute} ${hour} * * 0`;
-}
-
-// Пользователи с записями еды или тренировок за период.
-function getActiveUserIds(db: Db, start: Date, end: Date): number[] {
-  const ids = new Set([
-    ...getUserIdsWithMealsBetween(db, start, end),
-    ...getUserIdsWithWorkoutsBetween(db, start, end),
-  ]);
-  return [...ids].sort((a, b) => a - b);
+function usersAtLocalTime(
+  users: UserTimeZone[],
+  now: Date,
+  time: string,
+  weekday?: number,
+): UserTimeZone[] {
+  return users.filter(({ timeZone }) => isLocalTime(now, timeZone, time, weekday));
 }
 
 // Комментарий Ням-Ням к отчёту. Если ИИ недоступен — отчёт уходит без комментария.
@@ -74,18 +81,21 @@ async function sendReport(api: MessageSender, userId: number, text: string, kind
   }
 }
 
+// Вечерняя сводка за «сегодня» по поясу каждого пользователя — тем, у кого за день есть
+// записи еды или тренировок.
 export async function sendEveningSummaries(
   api: MessageSender,
   db: Db,
   now: Date,
-  timeZone: string,
+  users: UserTimeZone[],
   comment: CommentOnPeriod,
 ): Promise<void> {
-  const { start, end } = getTodayBoundsUtc(now, timeZone);
-
-  for (const userId of getActiveUserIds(db, start, end)) {
+  for (const { userId, timeZone } of users) {
+    const { start, end } = getTodayBoundsUtc(now, timeZone);
     const meals = getMealsForUserOnDate(db, userId, start, end);
     const workouts = getWorkoutsBetween(db, userId, start, end);
+    if (meals.length === 0 && workouts.length === 0) continue;
+
     const profile = getProfileByUserId(db, userId);
     const report = buildTodayReport(meals, timeZone, profile, EVENING_SUMMARY_TITLE, workouts);
 
@@ -101,16 +111,22 @@ export async function sendEveningSummaries(
   }
 }
 
+// Недельный отчёт за текущую неделю (пн–вс) по поясу каждого пользователя — тем, у кого
+// за неделю есть записи еды или тренировок.
 export async function sendWeeklyReports(
   api: MessageSender,
   db: Db,
   now: Date,
-  timeZone: string,
+  users: UserTimeZone[],
   comment: CommentOnPeriod,
 ): Promise<void> {
-  const week = getWeekBoundsUtc(now, timeZone);
+  for (const { userId, timeZone } of users) {
+    const week = getWeekBoundsUtc(now, timeZone);
+    const active =
+      getMealsForUserOnDate(db, userId, week.start, week.end).length > 0 ||
+      getWorkoutsBetween(db, userId, week.start, week.end).length > 0;
+    if (!active) continue;
 
-  for (const userId of getActiveUserIds(db, week.start, week.end)) {
     const dataSource = createCoachDataSource(db, userId, timeZone, () => now);
     const days = dataSource.getDailySummaries(formatYmd(week.first), formatYmd(week.last));
     const weights = getWeightEntriesBetween(db, userId, week.start, week.end);
@@ -125,48 +141,78 @@ export async function sendWeeklyReports(
   }
 }
 
+// Напоминания о еде проверяются раз в 15 минут: все пояса сдвинуты от UTC на кратное
+// 15 минутам, так что окна у всех пользователей одинаково точные.
+const MEAL_REMINDER_EVERY_MIN = 15;
+
+// Один тик планировщика: каждая рассылка — тем пользователям, у кого по их поясу
+// наступило её время. Ошибка одной рассылки не мешает остальным.
+export async function runScheduledTasks(
+  api: MessageSender,
+  db: Db,
+  now: Date,
+  comment: CommentOnPeriod = commentOnPeriod,
+): Promise<void> {
+  const users = getAllUserTimeZones(db);
+  const tasks: Array<[string, () => Promise<void>]> = [
+    [
+      "вечерней сводки",
+      () =>
+        sendEveningSummaries(
+          api,
+          db,
+          now,
+          usersAtLocalTime(users, now, config.eveningSummaryTime),
+          comment,
+        ),
+    ],
+    [
+      "недельного отчёта",
+      () =>
+        sendWeeklyReports(
+          api,
+          db,
+          now,
+          usersAtLocalTime(users, now, config.weeklyReportTime, SUNDAY),
+          comment,
+        ),
+    ],
+    [
+      "напоминаний о весе",
+      () =>
+        sendWeightReminders(api, db, now, usersAtLocalTime(users, now, config.weightReminderTime)),
+    ],
+  ];
+  if (config.mealRemindersEnabled && now.getUTCMinutes() % MEAL_REMINDER_EVERY_MIN === 0) {
+    tasks.push(["напоминаний о еде", () => sendMealReminders(api, db, now, users)]);
+  }
+
+  for (const [label, task] of tasks) {
+    try {
+      await task();
+    } catch (err) {
+      console.error(`Ошибка при рассылке ${label}:`, err);
+    }
+  }
+}
+
 export function startScheduler(api: MessageSender, db: Db): void {
-  const timeZone = config.defaultTimezone;
-
-  cron.schedule(
-    timeToDailyCron(config.eveningSummaryTime),
-    () => {
-      sendEveningSummaries(api, db, new Date(), timeZone, commentOnPeriod).catch((err) => {
-        console.error("Ошибка при рассылке вечерней сводки:", err);
-      });
-    },
-    { timezone: timeZone, name: "evening-summary" },
-  );
-
-  cron.schedule(
-    timeToSundayCron(config.weeklyReportTime),
-    () => {
-      sendWeeklyReports(api, db, new Date(), timeZone, commentOnPeriod).catch((err) => {
-        console.error("Ошибка при рассылке недельного отчёта:", err);
-      });
-    },
-    { timezone: timeZone, name: "weekly-report" },
-  );
-
-  if (config.mealRemindersEnabled) {
-    cron.schedule(
-      "*/15 * * * *",
-      () => {
-        sendMealReminders(api, db, new Date(), timeZone).catch((err) => {
-          console.error("Ошибка при рассылке напоминаний о еде:", err);
-        });
-      },
-      { timezone: timeZone, name: "meal-reminders" },
-    );
+  // Неверное время в .env — ошибка при запуске, а не молча пропущенные рассылки.
+  for (const time of [
+    config.eveningSummaryTime,
+    config.weeklyReportTime,
+    config.weightReminderTime,
+  ]) {
+    parseTime(time);
   }
 
   cron.schedule(
-    timeToDailyCron(config.weightReminderTime),
+    "* * * * *",
     () => {
-      sendWeightReminders(api, db, new Date(), timeZone).catch((err) => {
-        console.error("Ошибка при рассылке напоминаний о весе:", err);
+      runScheduledTasks(api, db, new Date()).catch((err) => {
+        console.error("Ошибка планировщика:", err);
       });
     },
-    { timezone: timeZone, name: "weight-reminders" },
+    { name: "scheduler-tick" },
   );
 }

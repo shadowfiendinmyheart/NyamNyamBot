@@ -2,7 +2,7 @@ import type { Conversation } from "@grammyjs/conversations";
 import { Bot, InlineKeyboard, type Context } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
-import { config } from "../config.js";
+import { getUserTimeZone } from "../db/users.js";
 import type { MyContext } from "../context.js";
 import {
   getProfileByUserId,
@@ -141,7 +141,12 @@ export function weightConversation(db: Db) {
 
     const snapshot = await conversation.external(() => {
       const profile = getProfileByUserId(db, userId);
-      return profile ? { profile, history: getWeightHistory(db, userId, HISTORY_SIZE) } : undefined;
+      if (!profile) return undefined;
+      return {
+        profile,
+        history: getWeightHistory(db, userId, HISTORY_SIZE),
+        timeZone: getUserTimeZone(db, userId),
+      };
     });
     if (!snapshot) {
       await ctx.reply(NO_PROFILE_TEXT);
@@ -149,7 +154,7 @@ export function weightConversation(db: Db) {
     }
 
     await ctx.reply(
-      buildWeightHistoryMessage(snapshot.profile, snapshot.history, config.defaultTimezone),
+      buildWeightHistoryMessage(snapshot.profile, snapshot.history, snapshot.timeZone),
     );
     const weightKg = await askNumber(conversation, ctx, "Введите текущий вес, кг:", {
       min: MIN_WEIGHT_KG,

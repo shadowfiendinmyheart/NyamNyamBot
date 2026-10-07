@@ -38,13 +38,15 @@ export const config = {
     .map((code) => code.trim())
     .filter(Boolean),
   dbPath: process.env.DB_PATH ?? "./data/db.sqlite",
+  // Пояс пользователей, которые его ещё не выбрали (users.timezone = null).
   defaultTimezone: process.env.DEFAULT_TIMEZONE ?? "Europe/Moscow",
-  // Время вечерней сводки (HH:MM) в DEFAULT_TIMEZONE.
+  // Время вечерней сводки (HH:MM) по часовому поясу каждого пользователя.
   eveningSummaryTime: process.env.EVENING_SUMMARY_TIME || "23:30",
-  // Время недельного отчёта по воскресеньям (HH:MM) в DEFAULT_TIMEZONE.
+  // Время недельного отчёта по воскресеньям (HH:MM) по поясу каждого пользователя.
   weeklyReportTime: process.env.WEEKLY_REPORT_TIME || "21:00",
   // Напоминания о пропущенном обеде/ужине. По умолчанию выключены.
   mealRemindersEnabled: process.env.MEAL_REMINDERS_ENABLED === "true",
-  // Время ежедневной проверки, не пора ли напомнить записать вес (HH:MM, в DEFAULT_TIMEZONE).
+  // Время ежедневной проверки, не пора ли напомнить записать вес (HH:MM, по поясу
+  // пользователя).
   weightReminderTime: process.env.WEIGHT_REMINDER_TIME || "09:00",
 };
