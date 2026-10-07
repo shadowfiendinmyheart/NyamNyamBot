@@ -91,7 +91,7 @@ describe("claude/coach askCoach", () => {
       dataSource: makeDataSource(),
     });
 
-    expect(reply).toBe("Всё отлично!");
+    expect(reply.text).toBe("Всё отлично!");
     const call = createMock.mock.calls[0][0];
     expect(call.model).toBe("claude-sonnet-5");
     expect(call.max_tokens).toBe(700);
@@ -117,7 +117,7 @@ describe("claude/coach askCoach", () => {
 
     const reply = await askCoach({ history: [], question: "Как неделя?", dataSource });
 
-    expect(reply).toBe("За неделю всё хорошо.");
+    expect(reply.text).toBe("За неделю всё хорошо.");
     expect(dataSource.getDailySummaries).toHaveBeenCalledWith("2026-08-17", "2026-08-23");
 
     // messages — один и тот же массив, который дополняется по ходу цикла:
@@ -141,6 +141,35 @@ describe("claude/coach askCoach", () => {
     });
   });
 
+  it("без offer_diary_entry не предлагает записать в дневник", async () => {
+    createMock.mockResolvedValue(textResponse("Мур!"));
+
+    const reply = await askCoach({ history: [], question: "Как дела?", dataSource: makeDataSource() });
+
+    expect(reply.offerDiaryEntry).toBe(false);
+  });
+
+  it("offer_diary_entry — ответ с предложением записать в дневник", async () => {
+    createMock
+      .mockResolvedValueOnce(toolResponse("offer_diary_entry", {}))
+      .mockResolvedValueOnce(textResponse("Яблоко — отличный перекус! Запишите кнопкой ниже."));
+
+    const reply = await askCoach({
+      history: [],
+      question: "Съел яблоко",
+      dataSource: makeDataSource(),
+    });
+
+    expect(reply).toEqual({
+      text: "Яблоко — отличный перекус! Запишите кнопкой ниже.",
+      offerDiaryEntry: true,
+    });
+    const { messages, tools } = createMock.mock.calls[1][0];
+    expect(tools.map((t: { name: string }) => t.name)).toContain("offer_diary_entry");
+    expect(messages[2].content[0]).toMatchObject({ tool_use_id: "toolu_1" });
+    expect(messages[2].content[0].is_error).toBeUndefined();
+  });
+
   it("бросает CoachError, если модель зациклилась на инструментах", async () => {
     createMock.mockResolvedValue(toolResponse("get_weight_history", { limit: 5 }));
 
@@ -155,7 +184,7 @@ describe("claude/coach askCoach", () => {
 
     const reply = await askCoach({ history: [], question: "?", dataSource: makeDataSource() });
 
-    expect(reply).toBe("Белка мало.");
+    expect(reply.text).toBe("Белка мало.");
   });
 
   it("пустой ответ, оборванный по max_tokens, — CoachError, а не «…»", async () => {
@@ -174,7 +203,7 @@ describe("claude/coach askCoach", () => {
       ],
       stop_reason: "max_tokens",
     });
-    const store: string[] = [];
+    const store: unknown[] = [];
 
     await expect(
       askCoach({ history: [], question: "?", dataSource: makeDataSource() }).then((r) => store.push(r)),
@@ -187,8 +216,8 @@ describe("claude/coach askCoach", () => {
 
     const reply = await askCoach({ history: [], question: "?", dataSource: makeDataSource() });
 
-    expect(reply.length).toBeLessThanOrEqual(4000);
-    expect(reply.endsWith(".")).toBe(true);
+    expect(reply.text.length).toBeLessThanOrEqual(4000);
+    expect(reply.text.endsWith(".")).toBe(true);
   });
 
   it("пустой ответ — CoachError", async () => {

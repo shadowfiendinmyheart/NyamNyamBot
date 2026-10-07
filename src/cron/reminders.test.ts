@@ -173,6 +173,7 @@ describe("cron/reminders sendWeightReminders", () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage.mock.calls[0][1]).toContain("Вес не обновлялся уже 8 дн.");
+    expect(sendMessage.mock.calls[0][1]).toContain("нажмите кнопку ниже");
     expect(JSON.stringify(sendMessage.mock.calls[0][2])).toContain("menu:weight");
   });
 

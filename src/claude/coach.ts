@@ -4,6 +4,7 @@ import {
   CoachError,
   type AskCoachInput,
   type CoachDataSource,
+  type CoachReply,
   type CommentOnPeriodInput,
 } from "../ai/coach.js";
 import { trimToLastSentence } from "../utils/text.js";
@@ -15,6 +16,7 @@ import {
   COACH_SYSTEM_PROMPT,
   COACH_TOOLS,
   COMMENT_SYSTEM_PROMPT,
+  OFFER_DIARY_ENTRY_TOOL,
 } from "./coachPrompts.js";
 
 // Лимиты токенов держат ответ заведомо короче лимита сообщения Telegram (4096):
@@ -24,7 +26,7 @@ const COMMENT_MAX_TOKENS = 250;
 const MAX_REPLY_CHARS = 4000;
 const MAX_TOOL_ROUNDS = 5;
 
-export async function askCoach(input: AskCoachInput): Promise<string> {
+export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
   const system = [COACH_SYSTEM_PROMPT, buildSnapshotBlock(input.dataSource.getSnapshot())];
   if (input.context) system.push(buildContextBlock(input.context));
 
@@ -32,6 +34,8 @@ export async function askCoach(input: AskCoachInput): Promise<string> {
     ...input.history.map((m) => ({ role: m.role, content: m.text })),
     { role: "user", content: input.question },
   ];
+
+  let offerDiaryEntry = false;
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     const response = await createMessage({
@@ -45,9 +49,12 @@ export async function askCoach(input: AskCoachInput): Promise<string> {
       (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
     );
     if (response.stop_reason !== "tool_use" || toolUses.length === 0) {
-      return finalizeText(response);
+      return { text: finalizeText(response), offerDiaryEntry };
     }
 
+    if (toolUses.some((toolUse) => toolUse.name === OFFER_DIARY_ENTRY_TOOL)) {
+      offerDiaryEntry = true;
+    }
     messages.push({ role: "assistant", content: response.content });
     messages.push({
       role: "user",
@@ -119,6 +126,9 @@ function callTool(
       return dataSource.getWeightHistory(Number(args.limit));
     case "get_exercise_history":
       return dataSource.getExerciseHistory(String(args.query ?? ""), Number(args.limit));
+    case OFFER_DIARY_ENTRY_TOOL:
+      // Записывает не модель, а сам пользователь — кнопкой под ответом (features/coach).
+      return { ok: true, note: "Под ответом появится кнопка «📝 Записать в дневник»." };
     default:
       throw new Error(`Неизвестный инструмент: ${name}`);
   }

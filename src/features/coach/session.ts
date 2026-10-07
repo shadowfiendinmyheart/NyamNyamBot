@@ -12,15 +12,20 @@ export interface CoachSessionStoreOptions {
   now?: () => number;
 }
 
+export type CoachSessionExpireListener = (userId: number) => void;
+
 // Разговоры с Ням-Ням живут только в памяти процесса: после «Завершить», часа
 // бездействия или рестарта бота всё забывается. Память ограничена: в истории не больше
 // maxMessages реплик, а брошенные сессии удаляет sweep() (см. startSweeper), так что
 // объём зависит только от числа недавно активных пользователей, а не от времени работы.
+// О закрытии по таймауту (в sweep() или при обращении к истёкшей сессии) сообщает
+// слушатель из onExpire — бот предупреждает пользователя, что разговор закончен.
 export class CoachSessionStore {
   private readonly sessions = new Map<number, CoachSession>();
   private readonly idleTimeoutMs: number;
   private readonly maxMessages: number;
   private readonly now: () => number;
+  private expireListener?: CoachSessionExpireListener;
 
   constructor(options: CoachSessionStoreOptions = {}) {
     this.idleTimeoutMs = options.idleTimeoutMs ?? 60 * 60 * 1000;
@@ -28,6 +33,10 @@ export class CoachSessionStore {
     const maxMessages = options.maxMessages ?? 20;
     this.maxMessages = Math.max(2, maxMessages - (maxMessages % 2));
     this.now = options.now ?? Date.now;
+  }
+
+  onExpire(listener: CoachSessionExpireListener): void {
+    this.expireListener = listener;
   }
 
   start(userId: number, context?: string): CoachSession {
@@ -39,7 +48,7 @@ export class CoachSessionStore {
   get(userId: number): CoachSession | undefined {
     const session = this.sessions.get(userId);
     if (session && this.isExpired(session)) {
-      this.sessions.delete(userId);
+      this.expire(userId);
       return undefined;
     }
     return session;
@@ -63,14 +72,15 @@ export class CoachSessionStore {
     let removed = 0;
     for (const [userId, session] of this.sessions) {
       if (this.isExpired(session)) {
-        this.sessions.delete(userId);
+        this.expire(userId);
         removed++;
       }
     }
     return removed;
   }
 
-  startSweeper(intervalMs = 10 * 60 * 1000): NodeJS.Timeout {
+  // Раз в минуту: сообщение об авто-закрытии приходит почти сразу после таймаута.
+  startSweeper(intervalMs = 60 * 1000): NodeJS.Timeout {
     const timer = setInterval(() => this.sweep(), intervalMs);
     // Таймер не должен держать процесс живым (например, в тестах или при остановке).
     timer.unref();
@@ -83,5 +93,14 @@ export class CoachSessionStore {
 
   private isExpired(session: CoachSession): boolean {
     return this.now() - session.lastActivityAt > this.idleTimeoutMs;
+  }
+
+  private expire(userId: number): void {
+    this.sessions.delete(userId);
+    try {
+      this.expireListener?.(userId);
+    } catch (err) {
+      console.error("Ошибка в обработчике закрытия разговора с Ням-Ням:", err);
+    }
   }
 }

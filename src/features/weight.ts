@@ -39,6 +39,21 @@ export function parseWeight(text: string): number | undefined {
   return roundWeight(value);
 }
 
+// «78.5», «78,5 кг», «вес 78.5», «Вес: 78» — сообщение вне диалогов, которое целиком
+// является записью веса. Голое число принимается, только если оно в диапазоне весов
+// (иначе это не вес — пусть разбирает ИИ); со словом «вес» число вне диапазона —
+// "invalid": намерение понятно, но значение нет.
+const WEIGHT_MESSAGE_PATTERN =
+  /^(вес\s*[:=-]?\s*)?(\d{1,3}(?:[.,]\d+)?)\s*(?:кг|kg|килограмм(?:а|ов)?)?\.?$/u;
+
+export function parseWeightMessage(text: string): number | "invalid" | undefined {
+  const match = WEIGHT_MESSAGE_PATTERN.exec(text.trim().toLowerCase());
+  if (!match) return undefined;
+  const weightKg = parseWeight(match[2]);
+  if (weightKg !== undefined) return weightKg;
+  return match[1] ? "invalid" : undefined;
+}
+
 function formatSigned(value: number): string {
   const rounded = Math.round(value * 10) / 10;
   if (rounded === 0) return "0";
@@ -167,6 +182,23 @@ export function weightConversation(db: Db) {
     );
     await replyWeightLogged(ctx, result);
   };
+}
+
+// Число в диапазоне весов или «вес 78.5» вне диалогов — запись веса. Регистрируется
+// после коуча (в разговоре с Ням-Ням число — ответ ей) и до записи еды.
+export function registerWeightShortcut(bot: Bot<MyContext>, db: Db): void {
+  bot.on("message:text", async (ctx, next) => {
+    const weightKg = parseWeightMessage(ctx.message.text);
+    if (weightKg === undefined) return next();
+
+    if (weightKg === "invalid") {
+      await ctx.reply(
+        `Не понял вес. Пример: «вес 78.5» (от ${MIN_WEIGHT_KG} до ${MAX_WEIGHT_KG} кг).`,
+      );
+      return;
+    }
+    await replyWeightLogged(ctx, logWeight(db, ctx.from.id, weightKg));
+  });
 }
 
 export function registerWeight(bot: Bot<MyContext>, db: Db): void {

@@ -25,6 +25,7 @@ import {
 import { determineMealType, formatMealDay, resolveMealTime } from "../utils/mealTime.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
 import { withChatAction } from "../utils/chatAction.js";
+import { smallTalkReply } from "./smallTalk.js";
 import { replyRecognizedWorkouts, saveRecognizedWorkouts } from "./workout.js";
 import {
   buildVoiceConfirmMessage,
@@ -183,15 +184,27 @@ export async function transcribeVoiceMessage(ctx: MyContext): Promise<string | u
   }
 }
 
-async function logDescribedMeal(
+// Ответ, когда в тексте/голосовом не нашлось ни еды, ни тренировки: коротко, с примером.
+export function buildNotRecognizedMessage(
+  source: "text" | "voice",
+  notes: string | null,
+): string {
+  const subject = source === "voice" ? "в голосовом" : "тут";
+  return [
+    `🤔 Не нашла ${subject} ни еды, ни тренировки.${notes ? ` ${notes}` : ""}`,
+    "Напишите, что съели («овсянка с бананом»), или пришлите фото 🐾",
+  ].join("\n");
+}
+
+// Разбирает описание еды/тренировки (текст или расшифровку голосового) и пишет в
+// дневник. Также зовётся из разговора с Ням-Ням — кнопкой «📝 Записать в дневник».
+export async function logDescribedMeal(
   db: Db,
   ctx: MyContext,
   text: string,
   source: "text" | "voice",
 ): Promise<void> {
   if (!ctx.from) return;
-
-  const subject = source === "voice" ? "в голосовом сообщении" : "в сообщении";
 
   try {
     const userId = ctx.from.id;
@@ -226,11 +239,7 @@ async function logDescribedMeal(
 
     if (mealId === undefined) {
       if (workouts.length > 0) return;
-      await ctx.reply(
-        `Не получилось распознать еду или тренировку ${subject}.` +
-          `${result.notes ? ` ${result.notes}` : ""} ` +
-          "Опишите, что съели, или пришлите фото. Тренировку можно записать командой /workout.",
-      );
+      await ctx.reply(buildNotRecognizedMessage(source, result.notes));
       return;
     }
 
@@ -250,6 +259,13 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text.trim();
     if (!text || text.startsWith("/")) return;
+
+    // «Привет», «спасибо», «ок» — без запроса к ИИ.
+    const smallTalk = smallTalkReply(text);
+    if (smallTalk) {
+      await ctx.reply(smallTalk);
+      return;
+    }
 
     await withChatAction(ctx, "typing", async () => {
       await logDescribedMeal(db, ctx, text, "text");

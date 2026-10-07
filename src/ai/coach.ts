@@ -129,7 +129,14 @@ export interface CommentOnPeriodInput {
   summaries: DaySummary[];
 }
 
-export type AskCoach = (input: AskCoachInput) => Promise<string>;
+export interface CoachReply {
+  text: string;
+  // Коуч понял, что пользователь сообщил о съеденном или о тренировке, — под ответом
+  // нужно предложить записать это сообщение в дневник.
+  offerDiaryEntry: boolean;
+}
+
+export type AskCoach = (input: AskCoachInput) => Promise<CoachReply>;
 export type CommentOnPeriod = (input: CommentOnPeriodInput) => Promise<string>;
 
 // Как FoodAnalyzerError: текст для пользователя уже готов на русском.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMealMessage } from "./mealLogging.js";
+import { buildMealMessage, buildNotRecognizedMessage } from "./mealLogging.js";
 describe("features/mealLogging buildMealMessage", () => {
   it("lists items and totals, and appends notes when present", () => {
     const message = buildMealMessage(
@@ -46,5 +46,20 @@ describe("features/mealLogging buildMealMessage day label", () => {
 
   it("keeps the plain header for today", () => {
     expect(buildMealMessage("dinner", items, null).split("\n")[0]).toBe("🌙 Ужин");
+  });
+});
+
+describe("features/mealLogging buildNotRecognizedMessage", () => {
+  it("короткий ответ с подсказкой и пояснением ИИ", () => {
+    const message = buildNotRecognizedMessage("text", "Похоже на вопрос.");
+    expect(message).toContain("Не нашла тут ни еды, ни тренировки. Похоже на вопрос.");
+    expect(message).toContain("пришлите фото");
+    expect(message).not.toContain("/workout");
+  });
+
+  it("для голосового упоминает голосовое, без пояснения — без хвоста", () => {
+    expect(buildNotRecognizedMessage("voice", null)).toMatch(
+      /^🤔 Не нашла в голосовом ни еды, ни тренировки\.\n/,
+    );
   });
 });

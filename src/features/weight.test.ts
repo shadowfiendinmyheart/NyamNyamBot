@@ -5,6 +5,7 @@ import {
   buildWeightHistoryMessage,
   buildWeightLoggedMessage,
   parseWeight,
+  parseWeightMessage,
 } from "./weight.js";
 
 const before: ProfileRow = {
@@ -33,6 +34,29 @@ describe("features/weight parseWeight", () => {
     expect(parseWeight("")).toBeUndefined();
     expect(parseWeight("29")).toBeUndefined();
     expect(parseWeight("301")).toBeUndefined();
+  });
+});
+
+describe("features/weight parseWeightMessage", () => {
+  it("распознаёт число в диапазоне весов и «вес 78.5»", () => {
+    expect(parseWeightMessage("78.5")).toBe(78.5);
+    expect(parseWeightMessage(" 78,5 кг ")).toBe(78.5);
+    expect(parseWeightMessage("вес 78.5")).toBe(78.5);
+    expect(parseWeightMessage("Вес: 80")).toBe(80);
+    expect(parseWeightMessage("вес 64 килограмма")).toBe(64);
+  });
+
+  it("не трогает еду, текст и голые числа вне диапазона", () => {
+    expect(parseWeightMessage("съел яблоко")).toBeUndefined();
+    expect(parseWeightMessage("200 г гречки")).toBeUndefined();
+    expect(parseWeightMessage("5")).toBeUndefined();
+    expect(parseWeightMessage("500")).toBeUndefined();
+    expect(parseWeightMessage("вес гантели")).toBeUndefined();
+  });
+
+  it("«вес» с числом вне диапазона — invalid", () => {
+    expect(parseWeightMessage("вес 500")).toBe("invalid");
+    expect(parseWeightMessage("вес 7")).toBe("invalid");
   });
 });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CoachSessionStore } from "./session.js";
 
 const MINUTE = 60 * 1000;
@@ -79,5 +79,35 @@ describe("features/coach CoachSessionStore", () => {
     expect(store.end(1)).toBe(true);
     expect(store.end(1)).toBe(false);
     expect(store.get(1)).toBeUndefined();
+  });
+
+  it("сообщает о закрытии по таймауту — из sweep и из get, но не из end", () => {
+    const { store, advance } = makeStore();
+    const expired: number[] = [];
+    store.onExpire((userId) => expired.push(userId));
+
+    store.start(1);
+    store.start(2);
+    store.start(3);
+    expect(store.end(3)).toBe(true);
+    advance(61 * MINUTE);
+
+    expect(store.get(1)).toBeUndefined();
+    expect(store.sweep()).toBe(1);
+    expect(store.sweep()).toBe(0);
+    expect(expired).toEqual([1, 2]);
+  });
+
+  it("ошибка слушателя не ломает удаление сессии", () => {
+    const { store, advance } = makeStore();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    store.onExpire(() => {
+      throw new Error("boom");
+    });
+    store.start(1);
+    advance(61 * MINUTE);
+
+    expect(store.get(1)).toBeUndefined();
+    expect(store.size).toBe(0);
   });
 });

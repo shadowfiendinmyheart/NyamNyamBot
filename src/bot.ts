@@ -26,7 +26,11 @@ import { getProfileByUserId } from "./db/profiles.js";
 import { getUserTimeZone } from "./db/users.js";
 import { registerReports } from "./features/reports.js";
 import { registerTimeZone } from "./features/timezone.js";
-import { registerWeight, weightConversation } from "./features/weight.js";
+import {
+  registerWeight,
+  registerWeightShortcut,
+  weightConversation,
+} from "./features/weight.js";
 import { registerWorkout, workoutConversation } from "./features/workout.js";
 import { telegramClientOptions } from "./utils/telegram.js";
 
@@ -99,6 +103,8 @@ registerMotivation(bot);
 registerTimeZone(bot, db);
 // До registerMealLogging: в режиме разговора с Ням-Ням текст и голос идут коучу.
 registerCoach(bot, db);
+// Вне разговора с Ням-Ням «78.5» / «вес 78.5» — запись веса, а не еда.
+registerWeightShortcut(bot, db);
 registerMealLogging(bot, db);
 registerMealTime(bot, db);
 registerCorrection(bot, db);
