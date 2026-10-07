@@ -6,6 +6,7 @@ import { config } from "../config.js";
 import { commentOnPeriod, type CommentOnPeriod, type PeriodKind } from "../ai/coach.js";
 import { getMealsForUserOnDate } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
+import { getLastReminderAt, recordReminder } from "../db/reminders.js";
 import { getWeightEntriesBetween } from "../db/weightLog.js";
 import { getAllUserSchedules, type UserSchedule, type UserTimeZone } from "../db/users.js";
 import { getWorkoutsBetween } from "../db/workouts.js";
@@ -96,18 +97,26 @@ async function withCoachComment(
   }
 }
 
-async function sendReport(api: MessageSender, userId: number, text: string, kind: PeriodKind) {
+async function sendReport(
+  api: MessageSender,
+  userId: number,
+  text: string,
+  kind: PeriodKind,
+): Promise<boolean> {
   try {
     await api.sendMessage(userId, text, { reply_markup: coachDiscussKeyboard() });
+    return true;
   } catch (err) {
     // Например, пользователь заблокировал бота — остальным отчёт всё равно шлём.
     const label = kind === "day" ? "вечернюю сводку" : "недельный отчёт";
     console.error(`Не удалось отправить ${label} пользователю ${userId}:`, err);
+    return false;
   }
 }
 
 // Вечерняя сводка за «сегодня» по поясу каждого пользователя — тем, у кого за день есть
-// записи еды или тренировок.
+// записи еды или тренировок. Не больше одной за день: время сводки можно поменять в
+// «🔔 Уведомления» уже после того, как сегодняшняя ушла.
 export async function sendEveningSummaries(
   api: MessageSender,
   db: Db,
@@ -120,6 +129,8 @@ export async function sendEveningSummaries(
     const meals = getMealsForUserOnDate(db, userId, start, end);
     const workouts = getWorkoutsBetween(db, userId, start, end);
     if (meals.length === 0 && workouts.length === 0) continue;
+    const lastSummary = getLastReminderAt(db, userId, "summary");
+    if (lastSummary && lastSummary >= start) continue;
 
     const profile = getProfileByUserId(db, userId);
     const report = buildTodayReport(meals, timeZone, profile, EVENING_SUMMARY_TITLE, workouts);
@@ -132,7 +143,7 @@ export async function sendEveningSummaries(
       },
       userId,
     );
-    await sendReport(api, userId, text, "day");
+    if (await sendReport(api, userId, text, "day")) recordReminder(db, userId, "summary", now);
   }
 }
 

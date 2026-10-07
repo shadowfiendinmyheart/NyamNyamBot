@@ -4,7 +4,7 @@ import * as schema from "./schema.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
-export type ReminderKind = "lunch" | "dinner" | "weight";
+export type ReminderKind = "lunch" | "dinner" | "weight" | "summary";
 
 export function recordReminder(db: Db, userId: number, kind: ReminderKind, sentAt: Date): void {
   db.insert(schema.reminders).values({ userId, kind, sentAt }).run();

@@ -155,6 +155,22 @@ describe("cron/scheduler runScheduledTasks", () => {
     expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([1]);
   });
 
+  it("не шлёт вторую сводку за день, если время сводки поменяли после первой", async () => {
+    addMeal(db, 1, new Date("2026-08-23T15:00:00Z"));
+    updateNotificationSettings(db, 1, { eveningSummaryTime: "20:00" });
+    const sendMessage = vi.fn().mockResolvedValue({});
+
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T17:00:00Z"), undefined, comment);
+    updateNotificationSettings(db, 1, { eveningSummaryTime: "22:00" });
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-23T19:00:00Z"), undefined, comment);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    // На следующий день — снова по новому времени.
+    addMeal(db, 1, new Date("2026-08-24T15:00:00Z"));
+    await runScheduledTasks(api(sendMessage), db, new Date("2026-08-24T19:00:00Z"), undefined, comment);
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
+
   it("в другое время ничего не шлёт", async () => {
     addMeal(db, 1, new Date("2026-08-23T15:00:00Z"));
     const sendMessage = vi.fn().mockResolvedValue({});

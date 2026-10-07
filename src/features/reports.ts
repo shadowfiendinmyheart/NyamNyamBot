@@ -161,7 +161,7 @@ export function buildWeeklyReport(
   parts.push(
     workoutCount > 0
       ? `🏃 Тренировок: ${workoutCount}, сожжено ~${burnedKcal} ккал`
-      : "🏃 Тренировок за неделю не записано — /workout",
+      : "🏃 Тренировок за неделю не записано — просто опишите тренировку: «бег 40 минут»",
   );
 
   if (logged.length > 0) {

@@ -15,6 +15,19 @@ describe("features/coach CoachSessionStore", () => {
     expect(store.get(1)).toBeUndefined();
   });
 
+  it("isActive не закрывает истёкшую сессию и не зовёт onExpire", () => {
+    const { store, advance } = makeStore();
+    const onExpire = vi.fn();
+    store.onExpire(onExpire);
+    store.start(1);
+    expect(store.isActive(1)).toBe(true);
+
+    advance(61 * MINUTE);
+    expect(store.isActive(1)).toBe(false);
+    expect(onExpire).not.toHaveBeenCalled();
+    expect(store.has(1)).toBe(true);
+  });
+
   it("хранит историю парами и контекст", () => {
     const { store } = makeStore();
     store.start(1, "🌙 Итоги дня ...");

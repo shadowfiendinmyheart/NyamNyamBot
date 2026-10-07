@@ -96,7 +96,7 @@ bot.command("profile", async (ctx) => {
 const coachSessions = new CoachSessionStore();
 
 bot.command("help", async (ctx) => {
-  const inCoachMode = ctx.from !== undefined && coachSessions.get(ctx.from.id) !== undefined;
+  const inCoachMode = ctx.from !== undefined && coachSessions.isActive(ctx.from.id);
   await ctx.reply(HELP_TEXT, { reply_markup: inCoachMode ? coachKeyboard : mainKeyboard });
 });
 

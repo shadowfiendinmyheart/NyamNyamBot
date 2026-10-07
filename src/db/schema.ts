@@ -87,14 +87,14 @@ export const mealItems = sqliteTable("meal_items", {
   carbG: real("carb_g").notNull(),
 });
 
-// Отправленные напоминания — чтобы не слать одно и то же повторно (в том числе после
-// перезапуска бота).
+// Отправленные напоминания и вечерние сводки ("summary") — чтобы не слать одно и то же
+// повторно (в том числе после перезапуска бота или смены времени сводки).
 export const reminders = sqliteTable("reminders", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  kind: text("kind", { enum: ["lunch", "dinner", "weight"] }).notNull(),
+  kind: text("kind", { enum: ["lunch", "dinner", "weight", "summary"] }).notNull(),
   sentAt: integer("sent_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),

@@ -224,9 +224,9 @@ describe("features/reports buildWeeklyReport", () => {
     expect(text).toContain("🏃 Тренировок: 2, сожжено ~800 ккал");
   });
 
-  it("без тренировок подсказывает /workout", () => {
+  it("без тренировок подсказывает описать тренировку сообщением", () => {
     expect(buildWeeklyReport(days, undefined, [])).toContain(
-      "Тренировок за неделю не записано — /workout",
+      "Тренировок за неделю не записано — просто опишите тренировку",
     );
   });
 

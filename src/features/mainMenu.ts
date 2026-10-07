@@ -200,7 +200,6 @@ export function registerMainMenu(bot: Bot<MyContext>, db: Db): void {
         text: "Анкета уже заполнена — поменять ответы можно в «👤 Профиль».",
         show_alert: true,
       });
-      await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
       return;
     }
     if (hasActiveConversation(ctx) && !ctx.conversation.active("onboarding")) {

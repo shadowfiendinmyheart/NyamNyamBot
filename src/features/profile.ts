@@ -35,8 +35,6 @@ export const GOAL_LABEL: Record<Goal, string> = {
 export const FILL_PROFILE_BUTTON = "📝 Заполнить анкету";
 export const FILL_PROFILE_DATA = "profile:fill";
 export const RESTART_ONBOARDING_BUTTON = "🔄 Анкета заново";
-// Как добраться до повторной анкеты — для подсказок.
-export const RESTART_ONBOARDING_PATH = `«⚙️ Меню» → «👤 Профиль» → «${RESTART_ONBOARDING_BUTTON}»`;
 
 // Кнопка под сообщениями «сначала заполните анкету».
 export function fillProfileKeyboard(): InlineKeyboard {

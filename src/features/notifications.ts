@@ -22,11 +22,11 @@ const SET_TIME_PREFIX = "notif:settime:";
 
 type ToggleKey = "eveningSummaryEnabled" | "weeklyReportEnabled" | "remindersEnabled";
 
-const TOGGLES: Record<string, ToggleKey> = {
-  summary: "eveningSummaryEnabled",
-  weekly: "weeklyReportEnabled",
-  reminders: "remindersEnabled",
-};
+const TOGGLES = new Map<string, ToggleKey>([
+  ["summary", "eveningSummaryEnabled"],
+  ["weekly", "weeklyReportEnabled"],
+  ["reminders", "remindersEnabled"],
+]);
 
 // Время вечерней сводки на выбор: с 18:00 до 23:30 каждые полчаса. Сводка — итог
 // «сегодня», так что позже полуночи её ставить незачем.
@@ -97,7 +97,7 @@ export function registerNotifications(bot: Bot<MyContext>, db: Db): void {
   });
 
   bot.callbackQuery(new RegExp(`^${TOGGLE_PREFIX}(\\w+)$`), async (ctx) => {
-    const key = TOGGLES[ctx.match[1]];
+    const key = TOGGLES.get(ctx.match[1]);
     if (!key) {
       await ctx.answerCallbackQuery();
       return;

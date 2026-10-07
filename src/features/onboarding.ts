@@ -12,7 +12,6 @@ import {
   ACTIVITY_LABEL,
   ACTIVITY_QUESTION,
   GOAL_LABEL,
-  RESTART_ONBOARDING_PATH,
   SEX_LABEL,
 } from "./profile.js";
 import {
@@ -645,7 +644,7 @@ export function registerOnboarding(bot: Bot<MyContext>): void {
   // уже закончился или прервался (например, бот перезапускался).
   bot.callbackQuery(ONBOARDING_CALLBACK_PATTERN, async (ctx) => {
     await ctx.answerCallbackQuery({
-      text: `Анкета уже закрыта. Пройти её заново: ${RESTART_ONBOARDING_PATH}.`,
+      text: "Анкета уже закрыта. Начать её снова можно в «⚙️ Меню» → «👤 Профиль».",
       show_alert: true,
     });
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});

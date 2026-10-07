@@ -99,6 +99,13 @@ export class CoachSessionStore {
     return timer;
   }
 
+  // Идёт ли разговор — без побочных эффектов: истёкшую сессию не закрывает и
+  // onExpire не вызывает (это сделают get() или sweep()).
+  isActive(userId: number): boolean {
+    const session = this.sessions.get(userId);
+    return session !== undefined && !this.isExpired(session);
+  }
+
   get size(): number {
     return this.sessions.size;
   }
