@@ -8,8 +8,10 @@ import {
   createWorkout,
   deleteWorkoutForUser,
   getExerciseHistory,
+  getWorkoutById,
   getWorkoutsBetween,
   sumBurnedKcal,
+  updateWorkout,
   type CreateWorkoutInput,
 } from "./workouts.js";
 
@@ -92,5 +94,26 @@ describe("db/workouts", () => {
   it("суммирует расход", () => {
     expect(sumBurnedKcal([{ kcalBurned: 300 }, { kcalBurned: 223 }])).toBe(523);
     expect(sumBurnedKcal([])).toBe(0);
+  });
+});
+
+describe("db/workouts updateWorkout", () => {
+  it("меняет длительность, интенсивность и расход только своей тренировки", () => {
+    const db = makeDb();
+    createUser(db, 1, "alice");
+    createUser(db, 2, "bob");
+    const workout = createWorkout(db, {
+      ...run(1, new Date("2026-09-01T08:00:00Z")),
+      exercises: [{ name: "Скакалка", sets: null, reps: null, weightKg: null, durationSec: 600 }],
+    });
+    const change = { durationMin: 60, intensity: "high" as const, kcalBurned: 900 };
+
+    expect(updateWorkout(db, workout.id, 2, change)).toBeUndefined();
+    expect(getWorkoutById(db, workout.id, 2)).toBeUndefined();
+
+    const updated = updateWorkout(db, workout.id, 1, change);
+    expect(updated).toMatchObject({ ...change, description: "бег" });
+    expect(updated?.exercises.map((exercise) => exercise.name)).toEqual(["скакалка"]);
+    expect(updateWorkout(db, 999, 1, change)).toBeUndefined();
   });
 });

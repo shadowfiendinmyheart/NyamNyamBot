@@ -4,14 +4,20 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
 import type { MyContext } from "../context.js";
-import { analyzeFood, type AnalyzeFoodResult, type ImageMimeType } from "../ai/foodAnalyzer.js";
-import { getMealById, getMealItemsForMeals, updateMeal, type MealRow } from "../db/meals.js";
+import { analyzeFood, type AnalyzeFoodResult, type FoodImage } from "../ai/foodAnalyzer.js";
+import {
+  getMealById,
+  getMealItemsForMeals,
+  mealPhotoFileIds,
+  updateMeal,
+  type MealRow,
+} from "../db/meals.js";
 import { getUserTimeZone } from "../db/users.js";
 import {
   buildMealMessage,
   buildStoredMealMessage,
+  downloadPhoto,
   mealActionsKeyboard,
-  mimeTypeForFilePath,
   toFoodItems,
   toMealItemInputs,
 } from "./mealLogging.js";
@@ -22,7 +28,6 @@ import {
   voiceConfirmKeyboard,
   voiceConfirmPattern,
 } from "./voiceConfirm.js";
-import { downloadTelegramFile } from "../utils/telegram.js";
 import { withChatActionVia } from "../utils/chatAction.js";
 import { isCancelInput } from "./mainMenu.js";
 
@@ -154,21 +159,14 @@ export function correctionConversation(db: Db, api: Api) {
 
     await response.reply("⏳ Пересчитываю с учётом уточнения…");
 
-    // Фото не храним у себя — при коррекции заново скачиваем его из Telegram по file_id.
-    // Если не получилось, пересчитываем только по тексту предыдущей оценки.
-    const fileId = meal.source === "photo" ? meal.telegramFileId : null;
-    const downloadImage = async (): Promise<
-      { imageBase64: string; mimeType: ImageMimeType } | undefined
-    > => {
-      if (!fileId) return undefined;
+    // Фото не храним у себя — при коррекции заново скачиваем их из Telegram по file_id
+    // (у альбома их несколько). Если не получилось, пересчитываем только по тексту
+    // предыдущей оценки.
+    const fileIds = meal.source === "photo" ? mealPhotoFileIds(meal) : [];
+    const downloadImages = async (): Promise<FoodImage[] | undefined> => {
+      if (fileIds.length === 0) return undefined;
       try {
-        const file = await api.getFile(fileId);
-        if (!file.file_path) return undefined;
-        const buf = await downloadTelegramFile(file.file_path);
-        return {
-          imageBase64: buf.toString("base64"),
-          mimeType: mimeTypeForFilePath(file.file_path),
-        };
+        return await Promise.all(fileIds.map((fileId) => downloadPhoto(api, fileId)));
       } catch (err) {
         console.error("Не удалось скачать фото из Telegram для коррекции:", err);
         return undefined;
@@ -179,8 +177,7 @@ export function correctionConversation(db: Db, api: Api) {
     try {
       result = await conversation.external(() =>
         withChatActionVia(api, chatId, "typing", async () => {
-          const imageInput = await downloadImage();
-          return analyzeFood({ text: prompt, ...imageInput });
+          return analyzeFood({ text: prompt, images: await downloadImages() });
         }),
       );
     } catch (err) {

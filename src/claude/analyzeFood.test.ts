@@ -34,13 +34,25 @@ describe("claude/analyzeFood", () => {
   });
 
   it("throws without calling the API when there is no image or text", async () => {
-    await expect(analyzeFood({})).rejects.toThrow(/imageBase64 или text/);
+    await expect(analyzeFood({})).rejects.toThrow(/фото или text/);
+    await expect(analyzeFood({ images: [] })).rejects.toThrow(/фото или text/);
     expect(createMock).not.toHaveBeenCalled();
   });
 
-  it("throws without calling the API when imageBase64 is given without mimeType", async () => {
-    await expect(analyzeFood({ imageBase64: "BASE64DATA" })).rejects.toThrow(/mimeType/);
-    expect(createMock).not.toHaveBeenCalled();
+  it("sends every photo of an album as a separate image block", async () => {
+    createMock.mockResolvedValue(toolUseResponse({ food_detected: true, items: [] }));
+
+    await analyzeFood({
+      images: [
+        { imageBase64: "SOUP", mimeType: "image/jpeg" },
+        { imageBase64: "MAIN", mimeType: "image/png" },
+      ],
+    });
+
+    expect(createMock.mock.calls[0][0].messages[0].content).toEqual([
+      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "SOUP" } },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "MAIN" } },
+    ]);
   });
 
   it("sends image and text blocks in order when both are provided", async () => {
@@ -49,8 +61,7 @@ describe("claude/analyzeFood", () => {
     );
 
     await analyzeFood({
-      imageBase64: "BASE64DATA",
-      mimeType: "image/jpeg",
+      images: [{ imageBase64: "BASE64DATA", mimeType: "image/jpeg" }],
       text: "с добавкой соуса",
     });
 

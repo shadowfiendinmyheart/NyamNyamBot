@@ -10,6 +10,8 @@ import {
   deleteMealForUser,
   getMealById,
   getMealsForUserOnDate,
+  joinPhotoFileIds,
+  mealPhotoFileIds,
   updateMeal,
   updateMealTime,
 } from "./meals.js";
@@ -262,5 +264,19 @@ describe("db/meals meal time", () => {
 
     expect(updateMealTime(db, mealId, 1, update)).toBe(true);
     expect(getMealById(db, mealId, 1)).toMatchObject(update);
+  });
+});
+
+describe("db/meals photo file ids", () => {
+  it("хранит фото альбома в одной колонке и читает обратно", () => {
+    const joined = joinPhotoFileIds(["AgAC-1", "AgAC_2"]);
+    expect(joined).toBe("AgAC-1,AgAC_2");
+    expect(mealPhotoFileIds({ telegramFileId: joined })).toEqual(["AgAC-1", "AgAC_2"]);
+  });
+
+  it("одно фото и запись без фото", () => {
+    expect(mealPhotoFileIds({ telegramFileId: "AgAC" })).toEqual(["AgAC"]);
+    expect(mealPhotoFileIds({ telegramFileId: null })).toEqual([]);
+    expect(joinPhotoFileIds([])).toBeNull();
   });
 });

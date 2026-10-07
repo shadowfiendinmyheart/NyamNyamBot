@@ -4,11 +4,13 @@ import type { MyContext } from "../context.js";
 import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
 
-// Единый флоу для голосового ввода: голосовое → расшифровка → сообщение с текстом и
-// кнопками «Да/Нет» → только после «Да» расшифровка идёт дальше (в дневник, коучу,
-// в уточнение оценки). Расшифровка бывает неточной, и так пользователь видит её заранее.
+// Флоу для голосового ввода: голосовое → расшифровка → сообщение с текстом и кнопками
+// «Да/Нет» → только после «Да» расшифровка идёт дальше (коучу, в уточнение оценки,
+// в «зачем вам бот»). Расшифровка бывает неточной, и так пользователь видит её заранее.
+// Голосовое с едой подтверждения не ждёт — см. buildVoiceTranscriptMessage.
 
-// Где было голосовое — от этого зависит callback_data и обработчик нажатия.
+// Где было голосовое — от этого зависит callback_data и обработчик нажатия. "meal" —
+// только для кнопок в сообщениях, отправленных до записи голосовой еды без подтверждения.
 export type VoiceConfirmScope = "meal" | "coach" | "fix" | "motivation";
 
 // Расшифровка хранится в тексте самого сообщения с кнопками, а не в памяти:
@@ -23,12 +25,20 @@ const TRUNCATION_MARK = "…";
 export const MAX_TRANSCRIPT_LENGTH =
   TELEGRAM_MAX_MESSAGE_LENGTH - PREFIX.length - SUFFIX.length - TRUNCATION_MARK.length;
 
+function truncateTranscript(transcript: string): string {
+  return transcript.length > MAX_TRANSCRIPT_LENGTH
+    ? `${transcript.slice(0, MAX_TRANSCRIPT_LENGTH).trimEnd()}${TRUNCATION_MARK}`
+    : transcript;
+}
+
 export function buildVoiceConfirmMessage(transcript: string): string {
-  const shown =
-    transcript.length > MAX_TRANSCRIPT_LENGTH
-      ? `${transcript.slice(0, MAX_TRANSCRIPT_LENGTH).trimEnd()}${TRUNCATION_MARK}`
-      : transcript;
-  return `${PREFIX}${shown}${SUFFIX}`;
+  return `${PREFIX}${truncateTranscript(transcript)}${SUFFIX}`;
+}
+
+// Голосовое с едой записывается сразу, без «Всё верно?»: запись всё равно можно
+// исправить или удалить. Расшифровку показываем отдельным сообщением перед записью.
+export function buildVoiceTranscriptMessage(transcript: string): string {
+  return `🎙 ${truncateTranscript(transcript)}`;
 }
 
 export function parseVoiceConfirmMessage(message: string | undefined): string | undefined {

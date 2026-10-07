@@ -31,7 +31,11 @@ import {
   registerWeightShortcut,
   weightConversation,
 } from "./features/weight.js";
-import { registerWorkout, workoutConversation } from "./features/workout.js";
+import {
+  registerWorkout,
+  workoutConversation,
+  workoutEditConversation,
+} from "./features/workout.js";
 import { telegramClientOptions } from "./utils/telegram.js";
 
 try {
@@ -61,6 +65,7 @@ bot.use(createConversation(motivationConversation(db, bot.api), "motivation"));
 bot.use(createConversation(correctionConversation(db, bot.api), "correction"));
 bot.use(createConversation(weightConversation(db), "weight"));
 bot.use(createConversation(workoutConversation(db), "workout"));
+bot.use(createConversation(workoutEditConversation(db, bot.api), "workoutEdit"));
 bot.use(createAccessGate(db));
 
 // /start шлют и те, кто уже пользуется ботом (например, «Перезапустить бота» в Telegram):

@@ -1,8 +1,13 @@
 export type ImageMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
+export interface FoodImage {
+  imageBase64: string;
+  mimeType: ImageMimeType;
+}
+
+// images — фото одного приёма пищи (альбом — несколько фото, например суп и второе).
 export interface AnalyzeFoodInput {
-  imageBase64?: string;
-  mimeType?: ImageMimeType;
+  images?: FoodImage[];
   text?: string;
 }
 

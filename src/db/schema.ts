@@ -51,7 +51,8 @@ export const meals = sqliteTable("meals", {
     enum: ["breakfast", "lunch", "dinner", "snack"],
   }).notNull(),
   source: text("source", { enum: ["photo", "text", "voice"] }).notNull(),
-  // file_id фото в Telegram: само фото храним только там, а не на диске.
+  // file_id фото в Telegram: само фото храним только там, а не на диске. У альбома —
+  // несколько file_id через запятую (см. joinPhotoFileIds / mealPhotoFileIds).
   telegramFileId: text("telegram_file_id"),
   description: text("description").notNull(),
   kcal: integer("kcal").notNull(),

@@ -47,6 +47,19 @@ describe("features/mealLogging buildMealMessage day label", () => {
   it("keeps the plain header for today", () => {
     expect(buildMealMessage("dinner", items, null).split("\n")[0]).toBe("🌙 Ужин");
   });
+
+  it("puts the day progress right under the totals, before notes", () => {
+    const lines = buildMealMessage(
+      "dinner",
+      items,
+      "порция на глаз",
+      null,
+      "📊 За день: 1240 / 2100 ккал, осталось 860",
+    ).split("\n");
+    const totalsIndex = lines.findIndex((line) => line.startsWith("Итого:"));
+    expect(lines[totalsIndex + 1]).toBe("📊 За день: 1240 / 2100 ккал, осталось 860");
+    expect(lines.at(-1)).toBe("⚠️ порция на глаз");
+  });
 });
 
 describe("features/mealLogging buildNotRecognizedMessage", () => {

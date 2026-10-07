@@ -21,24 +21,17 @@ interface AnalyzeFoodToolInput {
 }
 
 export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodResult> {
-  if (!input.imageBase64 && !input.text) {
-    throw new Error("analyzeFood: нужно передать imageBase64 или text");
-  }
-  if (input.imageBase64 && !input.mimeType) {
-    throw new Error("analyzeFood: для imageBase64 нужно передать mimeType");
+  const images = input.images ?? [];
+  if (images.length === 0 && !input.text) {
+    throw new Error("analyzeFood: нужно передать фото или text");
   }
 
-  const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
-  if (input.imageBase64 && input.mimeType) {
-    content.push({
+  const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = images.map(
+    (image) => ({
       type: "image",
-      source: {
-        type: "base64",
-        media_type: input.mimeType,
-        data: input.imageBase64,
-      },
-    });
-  }
+      source: { type: "base64", media_type: image.mimeType, data: image.imageBase64 },
+    }),
+  );
   if (input.text) {
     content.push({ type: "text", text: input.text });
   }

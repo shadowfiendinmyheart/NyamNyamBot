@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildVoiceConfirmMessage,
+  buildVoiceTranscriptMessage,
   MAX_TRANSCRIPT_LENGTH,
   parseVoiceConfirmMessage,
   voiceConfirmKeyboard,
@@ -35,5 +36,12 @@ describe("features/voiceConfirm buttons", () => {
 
     expect("voice_coach:yes".match(voiceConfirmPattern("coach"))?.[1]).toBe("yes");
     expect("voice_meal:yes".match(voiceConfirmPattern("coach"))).toBeNull();
+  });
+});
+
+describe("features/voiceConfirm transcript for food", () => {
+  it("shows the transcript without a confirmation question and fits Telegram's limit", () => {
+    expect(buildVoiceTranscriptMessage("съел борщ")).toBe("🎙 съел борщ");
+    expect(buildVoiceTranscriptMessage("а".repeat(10_000)).length).toBeLessThanOrEqual(4096);
   });
 });

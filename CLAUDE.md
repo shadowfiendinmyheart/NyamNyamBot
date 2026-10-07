@@ -54,14 +54,16 @@ src/
   features/
     onboarding.ts            # инвайт-код + анкета профиля (+ «зачем вам бот» для коуча)
     motivation.ts            # правка ответа «зачем вам бот» из профиля
-    mealLogging.ts            # обработка фото/текста → meal + meal_items
+    mealLogging.ts            # обработка фото (альбом — одна запись)/текста/голоса → meal
+    dayProgress.ts            # «📊 За день: съедено / норма, осталось» под записью еды
     mealTime.ts               # кнопка «🕐 Время»: тип приёма пищи и день записи
     correction.ts             # inline-кнопки и диалог правки оценки
     reports.ts                 # /today, /week, вечерняя сводка, недельный отчёт
     weight.ts                  # /weight, «78.5» / «вес 78.5» текстом, пересчёт нормы КБЖУ
     smallTalk.ts               # «привет»/«спасибо»/«ок» — ответ без вызова ИИ
     timezone.ts                # «🕐 Часовой пояс» в профиле и /timezone
-    workout.ts                 # /workout, запись тренировок (workoutFormat.ts — подписи)
+    workout.ts                 # /workout, запись и «✏️ Изменить» тренировок
+                               # (workoutFormat.ts — подписи)
     coach/                     # «🐱 Спросить Ням-Ням»: режим разговора со своей клавиатурой
                                # (coach.ts), сессии в памяти (session.ts), данные для ИИ
                                # (dataSource.ts), «📝 Записать в дневник» (diaryOffers.ts)
@@ -74,6 +76,7 @@ src/
     dates.ts                  # границы дня/недели в таймзоне пользователя
     timezones.ts              # частые пояса, разбор «Екатеринбург» / «UTC+5» / «МСК+2»
     mealTime.ts               # тип и время приёма пищи: по часам или «вчера на ужин»
+    mediaGroupBuffer.ts       # сбор частей альбома (media_group_id) в одну пачку
     proxy.ts                  # proxyDispatcher для PROXY_URL
   nutrition/
     calculations.ts           # формула Миффлина-Сан Жеора + распределение БЖУ,

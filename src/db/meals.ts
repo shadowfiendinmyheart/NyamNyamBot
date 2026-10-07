@@ -38,6 +38,18 @@ export interface NutritionTotals {
 export type MealRow = typeof schema.meals.$inferSelect;
 export type MealItemRow = typeof schema.mealItems.$inferSelect;
 
+// Фото альбома хранятся в одной колонке telegram_file_id через запятую: в file_id
+// Telegram (base64url) запятых не бывает, а отдельная таблица ради этого не нужна.
+const FILE_ID_SEPARATOR = ",";
+
+export function joinPhotoFileIds(fileIds: string[]): string | null {
+  return fileIds.length > 0 ? fileIds.join(FILE_ID_SEPARATOR) : null;
+}
+
+export function mealPhotoFileIds(meal: Pick<MealRow, "telegramFileId">): string[] {
+  return (meal.telegramFileId ?? "").split(FILE_ID_SEPARATOR).filter(Boolean);
+}
+
 export function sumNutrition(
   items: Array<{ kcal: number; proteinG: number; fatG: number; carbG: number }>,
 ): NutritionTotals {

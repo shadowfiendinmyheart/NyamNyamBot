@@ -1,5 +1,5 @@
 import type { Conversation } from "@grammyjs/conversations";
-import { Bot, InlineKeyboard, type Context } from "grammy";
+import { Bot, InlineKeyboard, type Api, type Context } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
@@ -8,6 +8,8 @@ import { getProfileByUserId } from "../db/profiles.js";
 import {
   createWorkout,
   deleteWorkoutForUser,
+  getWorkoutById,
+  updateWorkout,
   type ExerciseInput,
   type WorkoutEntry,
   type WorkoutSource,
@@ -157,15 +159,17 @@ export function buildWorkoutMessage(
   if (durationEstimated) {
     parts.push(
       "",
-      "⚠️ Длительность не указана и оценена примерно. Если не так, удалите запись и " +
-        "пришлите заново, указав время (например, «… за 40 минут»).",
+      "⚠️ Длительность не указана и оценена примерно. Если не так, нажмите «✏️ Изменить» " +
+        "и укажите, сколько минут длилась тренировка.",
     );
   }
   return parts.join("\n");
 }
 
 export function workoutActionsKeyboard(workoutId: number): InlineKeyboard {
-  return new InlineKeyboard().text("🗑 Удалить", `delete_workout:${workoutId}`);
+  return new InlineKeyboard()
+    .text("✏️ Изменить", `edit_workout:${workoutId}`)
+    .text("🗑 Удалить", `delete_workout:${workoutId}`);
 }
 
 const NO_PROFILE_TEXT =
@@ -314,6 +318,107 @@ export function workoutConversation(db: Db) {
   };
 }
 
+const EDIT_FIELD_CHOICES = {
+  duration: "⏱ Длительность",
+  intensity: "💪 Интенсивность",
+};
+
+type WorkoutEditOutcome =
+  | { status: "updated"; text: string }
+  | { status: "gone" }
+  | { status: "noProfile" };
+
+// Правка тренировки кнопкой «✏️ Изменить»: длительность или интенсивность, расход
+// пересчитывается по весу из профиля. api — внешний bot.api: внутри
+// conversation.external нельзя пользоваться ctx диалога.
+export function workoutEditConversation(db: Db, api: Api) {
+  return async function workoutEdit(
+    conversation: MyConversation,
+    ctx: Context,
+    workoutId: number,
+    chatId: number,
+    messageId: number,
+  ): Promise<void> {
+    const userId = ctx.from?.id;
+    if (!userId) return;
+
+    const workout = await conversation.external(() => getWorkoutById(db, workoutId, userId));
+    if (!workout) {
+      await ctx.reply("Эта тренировка уже не найдена — возможно, она была удалена.");
+      return;
+    }
+
+    const cancel = { cancelledText: "Правка тренировки отменена." };
+    const field = await askChoice(
+      conversation,
+      ctx,
+      `✏️ ${formatWorkoutLine(workout)}\n\nЧто поправить? /cancel — отменить.`,
+      EDIT_FIELD_CHOICES,
+      "wedit",
+      cancel,
+    );
+
+    let { durationMin, intensity } = workout;
+    if (field === "duration") {
+      durationMin = await askNumber(
+        conversation,
+        ctx,
+        `Сколько минут длилась тренировка? Сейчас — ${workout.durationMin} мин.`,
+        { min: 1, max: MAX_WORKOUT_MIN, integer: true },
+        cancel,
+      );
+    } else {
+      intensity = await askChoice(
+        conversation,
+        ctx,
+        `Какая интенсивность? Сейчас — ${INTENSITY_LABEL[workout.intensity].toLowerCase()}.`,
+        INTENSITY_LABEL,
+        "wedit_int",
+        cancel,
+      );
+    }
+
+    const outcome = await conversation.external((): WorkoutEditOutcome => {
+      const profile = getProfileByUserId(db, userId);
+      if (!profile) return { status: "noProfile" };
+      const kcalBurned = calculateWorkoutKcal({
+        activityType: workout.activityType,
+        intensity,
+        durationMin,
+        weightKg: profile.weightKg,
+      });
+      const updated = updateWorkout(db, workoutId, userId, { durationMin, intensity, kcalBurned });
+      return updated
+        ? { status: "updated", text: buildWorkoutMessage(updated, profile.activityLevel) }
+        : { status: "gone" };
+    });
+
+    if (outcome.status === "noProfile") {
+      await ctx.reply(NO_PROFILE_TEXT);
+      return;
+    }
+    if (outcome.status === "gone") {
+      await ctx.reply("Не получилось обновить тренировку — возможно, она была удалена.");
+      return;
+    }
+
+    const { text } = outcome;
+    await conversation.external(async () => {
+      try {
+        await api.editMessageText(chatId, messageId, text, {
+          reply_markup: workoutActionsKeyboard(workoutId),
+        });
+      } catch (err) {
+        console.error("Не удалось обновить исходное сообщение о тренировке:", err);
+      }
+    });
+    // Исходное сообщение может быть далеко вверху чата — результат присылаем и отдельно.
+    await ctx.reply(`✅ Обновил тренировку:\n\n${text}`, {
+      reply_markup: workoutActionsKeyboard(workoutId),
+    });
+  };
+}
+
 export function registerWorkout(bot: Bot<MyContext>, db: Db): void {
   bot.command("workout", async (ctx) => {
     if (!ctx.from) return;
@@ -347,6 +452,43 @@ export function registerWorkout(bot: Bot<MyContext>, db: Db): void {
       show_alert: true,
     });
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
+  });
+
+  bot.callbackQuery(/^(wedit|wedit_int):/, async (ctx) => {
+    await ctx.answerCallbackQuery({
+      text: "Эта правка уже неактуальна — нажмите «✏️ Изменить» под тренировкой ещё раз.",
+      show_alert: true,
+    });
+    await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
+  });
+
+  bot.callbackQuery(/^edit_workout:(\d+)$/, async (ctx) => {
+    const workoutId = Number(ctx.match[1]);
+    if (!getWorkoutById(db, workoutId, ctx.from.id)) {
+      await ctx.answerCallbackQuery({ text: "Тренировка не найдена.", show_alert: true });
+      return;
+    }
+
+    const chatId = ctx.callbackQuery.message?.chat.id;
+    const messageId = ctx.callbackQuery.message?.message_id;
+    if (!chatId || !messageId) {
+      await ctx.answerCallbackQuery({
+        text: "Не удалось определить сообщение.",
+        show_alert: true,
+      });
+      return;
+    }
+
+    if (ctx.conversation.active("workoutEdit")) {
+      await ctx.answerCallbackQuery({
+        text: "Уже идёт правка тренировки, закончите её или отправьте /cancel.",
+        show_alert: true,
+      });
+      return;
+    }
+
+    await ctx.answerCallbackQuery();
+    await ctx.conversation.enter("workoutEdit", workoutId, chatId, messageId);
   });
 
   bot.callbackQuery(/^delete_workout:(\d+)$/, async (ctx) => {

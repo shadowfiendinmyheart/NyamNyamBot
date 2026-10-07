@@ -131,6 +131,40 @@ export function getExerciseHistory(
     .map((row) => ({ ...row.exercise, performedAt: row.performedAt }));
 }
 
+export function getWorkoutById(
+  db: Db,
+  workoutId: number,
+  userId: number,
+): WorkoutEntry | undefined {
+  const workout = db
+    .select()
+    .from(schema.workouts)
+    .where(and(eq(schema.workouts.id, workoutId), eq(schema.workouts.userId, userId)))
+    .get();
+  return workout ? withExercises(db, [workout])[0] : undefined;
+}
+
+export interface UpdateWorkoutInput {
+  durationMin: number;
+  intensity: WorkoutIntensity;
+  kcalBurned: number;
+}
+
+// Правка тренировки кнопкой «✏️ Изменить». undefined — записи нет (удалена) или она чужая.
+export function updateWorkout(
+  db: Db,
+  workoutId: number,
+  userId: number,
+  input: UpdateWorkoutInput,
+): WorkoutEntry | undefined {
+  const result = db
+    .update(schema.workouts)
+    .set(input)
+    .where(and(eq(schema.workouts.id, workoutId), eq(schema.workouts.userId, userId)))
+    .run();
+  return result.changes > 0 ? getWorkoutById(db, workoutId, userId) : undefined;
+}
+
 export function deleteWorkoutForUser(db: Db, workoutId: number, userId: number): boolean {
   const result = db
     .delete(schema.workouts)

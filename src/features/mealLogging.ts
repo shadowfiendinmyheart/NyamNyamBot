@@ -1,5 +1,5 @@
 import path from "node:path";
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, type Api } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import { getUserTimeZone } from "../db/users.js";
@@ -7,6 +7,7 @@ import type { MyContext } from "../context.js";
 import {
   analyzeFood,
   FoodAnalyzerError,
+  type FoodImage,
   type FoodItem,
   type ImageMimeType,
 } from "../ai/foodAnalyzer.js";
@@ -15,7 +16,9 @@ import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import {
   createMeal,
   deleteMealForUser,
+  getMealById,
   getMealItemsForMeals,
+  joinPhotoFileIds,
   sumNutrition,
   type MealItemInput,
   type MealItemRow,
@@ -23,14 +26,15 @@ import {
   type MealType,
 } from "../db/meals.js";
 import { determineMealType, formatMealDay, resolveMealTime } from "../utils/mealTime.js";
+import { MediaGroupBuffer } from "../utils/mediaGroupBuffer.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
 import { withChatAction } from "../utils/chatAction.js";
+import { buildDayProgressLine } from "./dayProgress.js";
 import { smallTalkReply } from "./smallTalk.js";
 import { replyRecognizedWorkouts, saveRecognizedWorkouts } from "./workout.js";
 import {
-  buildVoiceConfirmMessage,
+  buildVoiceTranscriptMessage,
   settleVoiceConfirmation,
-  voiceConfirmKeyboard,
   voiceConfirmPattern,
 } from "./voiceConfirm.js";
 
@@ -54,12 +58,14 @@ export const MEAL_TYPE_LABEL: Record<MealType, string> = {
   snack: "🍎 Перекус",
 };
 
-// dayLabel — подпись дня для записи не за сегодня («вчера»), см. formatMealDay.
+// dayLabel — подпись дня для записи не за сегодня («вчера»), см. formatMealDay;
+// progressLine — сколько съедено за день и сколько осталось (см. buildDayProgressLine).
 export function buildMealMessage(
   mealType: MealType,
   items: FoodItem[],
   notes: string | null,
   dayLabel: string | null = null,
+  progressLine: string | null = null,
 ): string {
   const totals = sumNutrition(items);
 
@@ -78,6 +84,8 @@ export function buildMealMessage(
       `Ж ${totals.fatG.toFixed(1)} У ${totals.carbG.toFixed(1)}`,
   ];
 
+  if (progressLine) parts.push(progressLine);
+
   if (notes) {
     parts.push("", `⚠️ ${notes}`);
   }
@@ -85,7 +93,8 @@ export function buildMealMessage(
   return parts.join("\n");
 }
 
-// Сообщение для уже сохранённой записи — после смены времени или правки.
+// Сообщение для сохранённой записи — сразу после записи, после смены времени или правки.
+// Прогресс — за день записи: после переноса на вчера он считается по вчерашнему дню.
 export function buildStoredMealMessage(
   db: Db,
   meal: MealRow,
@@ -94,13 +103,96 @@ export function buildStoredMealMessage(
 ): string {
   const items = toFoodItems(getMealItemsForMeals(db, [meal.id]));
   const notes = (meal.rawClaudeResponse as { notes?: string | null } | null)?.notes ?? null;
+  const dayLabel = formatMealDay(meal.loggedAt, now, timeZone);
   return buildMealMessage(
     meal.mealType,
     items,
     notes,
-    formatMealDay(meal.loggedAt, now, timeZone),
+    dayLabel,
+    buildDayProgressLine(db, meal.userId, meal.loggedAt, timeZone, dayLabel),
   );
 }
+
+// Ответ на новую запись еды: оценка, прогресс за день и кнопки действий.
+async function replyLoggedMeal(
+  db: Db,
+  ctx: MyContext,
+  mealId: number,
+  userId: number,
+  timeZone: string,
+): Promise<void> {
+  const meal = getMealById(db, mealId, userId);
+  if (!meal) return;
+  await ctx.reply(buildStoredMealMessage(db, meal, timeZone), {
+    reply_markup: mealActionsKeyboard(mealId),
+  });
+}
+
+// Скачивает фото из Telegram по file_id (фото не храним у себя).
+export async function downloadPhoto(api: Api, fileId: string): Promise<FoodImage> {
+  const file = await api.getFile(fileId);
+  if (!file.file_path) {
+    throw new Error("Telegram не вернул file_path для фото");
+  }
+  const buffer = await downloadTelegramFile(file.file_path);
+  return { imageBase64: buffer.toString("base64"), mimeType: mimeTypeForFilePath(file.file_path) };
+}
+
+interface IncomingPhoto {
+  messageId: number;
+  fileId: string;
+  caption: string | undefined;
+}
+
+// Фото (или альбом — несколько фото одного приёма пищи) → одна запись в дневнике.
+async function logPhotoMeal(db: Db, ctx: MyContext, photos: IncomingPhoto[]): Promise<void> {
+  if (!ctx.from || photos.length === 0) return;
+  const userId = ctx.from.id;
+  const ordered = [...photos].sort((a, b) => a.messageId - b.messageId);
+
+  try {
+    console.log(`[${userId}] Начало обработки фото (${ordered.length}) в ${new Date().toISOString()}`);
+    await withChatAction(ctx, "typing", async () => {
+      const images = await Promise.all(ordered.map((photo) => downloadPhoto(ctx.api, photo.fileId)));
+      // У альбома подпись обычно у первого фото, но может быть у любого.
+      const caption = ordered
+        .map((photo) => photo.caption?.trim())
+        .filter(Boolean)
+        .join("\n");
+
+      const result = await analyzeFood({ images, text: caption || undefined });
+      if (!result.foodDetected || result.items.length === 0) {
+        await ctx.reply(
+          `Не получилось распознать еду на фото.${result.notes ? ` ${result.notes}` : ""} ` +
+            "Пришлите другое фото или опишите текстом.",
+        );
+        return;
+      }
+
+      const timeZone = getUserTimeZone(db, userId);
+      const mealId = createMeal(db, {
+        userId,
+        mealType: determineMealType(new Date(), timeZone),
+        source: "photo",
+        telegramFileId: joinPhotoFileIds(ordered.map((photo) => photo.fileId)),
+        description: caption || result.items.map((item) => item.name).join(", "),
+        items: toMealItemInputs(result.items),
+        rawClaudeResponse: result,
+      });
+
+      await replyLoggedMeal(db, ctx, mealId, userId, timeZone);
+      console.log(`[${userId}] Фото обработано успешно в ${new Date().toISOString()}`);
+    });
+  } catch (err) {
+    console.error("Не удалось обработать фото еды:", err);
+    await ctx
+      .reply(replyMessageForError(err, "Не получилось обработать фото, попробуйте ещё раз."))
+      .catch((replyErr: unknown) => console.error("Не удалось ответить на фото:", replyErr));
+  }
+}
+
+// Части альбома приходят отдельными обновлениями почти одновременно — ждём паузу.
+const ALBUM_COLLECT_DELAY_MS = 1500;
 
 export function mealActionsKeyboard(mealId: number): InlineKeyboard {
   return new InlineKeyboard()
@@ -247,10 +339,7 @@ export async function logDescribedMeal(
     }
 
     // Подпись дня — относительно момента ответа, а не исходного сообщения.
-    const dayLabel = formatMealDay(loggedAt, new Date(), timeZone);
-    await ctx.reply(buildMealMessage(mealType, result.items, result.notes, dayLabel), {
-      reply_markup: mealActionsKeyboard(mealId),
-    });
+    await replyLoggedMeal(db, ctx, mealId, userId, timeZone);
   } catch (err) {
     console.error("Не удалось обработать описание еды:", err);
     await ctx.reply(
@@ -276,21 +365,24 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
     });
   });
 
+  // Голосовое с едой пишем сразу и показываем расшифровку: неточную запись можно
+  // исправить (✏️) или удалить (🗑) под ней.
   bot.on("message:voice", async (ctx) => {
+    let text: string | undefined;
     try {
-      await withChatAction(ctx, "typing", async () => {
-        const text = await transcribeVoiceMessage(ctx);
-        if (text === undefined) return;
-        await ctx.reply(buildVoiceConfirmMessage(text), {
-          reply_markup: voiceConfirmKeyboard("meal"),
-        });
-      });
+      text = await withChatAction(ctx, "typing", () => transcribeVoiceMessage(ctx));
     } catch (err) {
       console.error("Не удалось обработать голосовое сообщение:", err);
       await ctx.reply("Не получилось обработать голосовое сообщение, попробуйте ещё раз.");
+      return;
     }
+    if (text === undefined) return;
+    await ctx.reply(buildVoiceTranscriptMessage(text));
+    const transcript = text;
+    await withChatAction(ctx, "typing", () => logDescribedMeal(db, ctx, transcript, "voice"));
   });
 
+  // Кнопки «Да/Нет» в сообщениях, отправленных до записи голосовой еды без подтверждения.
   bot.callbackQuery(voiceConfirmPattern("meal"), async (ctx) => {
     const text = await settleVoiceConfirmation(
       ctx,
@@ -301,57 +393,28 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
     await withChatAction(ctx, "typing", () => logDescribedMeal(db, ctx, text, "voice"));
   });
 
+  // Альбом (несколько фото с одним media_group_id) — один приём пищи: части собираем
+  // в буфер и обрабатываем вместе, с контекстом первой части.
+  const albums = new MediaGroupBuffer<{ ctx: MyContext; photo: IncomingPhoto }>(
+    ALBUM_COLLECT_DELAY_MS,
+    (parts) => logPhotoMeal(db, parts[0].ctx, parts.map((part) => part.photo)),
+  );
+
   bot.on("message:photo", async (ctx) => {
-    try {
-      console.log(`[${ctx.from.id}] Начало обработки фото в ${new Date().toISOString()}`);
-      await withChatAction(ctx, "typing", async () => {
-        const photo = ctx.message.photo.at(-1);
-        if (!photo) return;
+    const photo = ctx.message.photo.at(-1);
+    if (!photo) return;
+    const incoming: IncomingPhoto = {
+      messageId: ctx.message.message_id,
+      fileId: photo.file_id,
+      caption: ctx.message.caption,
+    };
 
-        const file = await ctx.getFile();
-        if (!file.file_path) {
-          throw new Error("Telegram не вернул file_path для фото");
-        }
-
-        const buffer = await downloadTelegramFile(file.file_path);
-        const mimeType = mimeTypeForFilePath(file.file_path);
-        const caption = ctx.message.caption?.trim();
-
-        const result = await analyzeFood({
-          imageBase64: buffer.toString("base64"),
-          mimeType,
-          text: caption || undefined,
-        });
-        if (!result.foodDetected || result.items.length === 0) {
-          await ctx.reply(
-            `Не получилось распознать еду на фото.${result.notes ? ` ${result.notes}` : ""} ` +
-              "Пришлите другое фото или опишите текстом.",
-          );
-          return;
-        }
-
-        const mealType = determineMealType(new Date(), getUserTimeZone(db, ctx.from.id));
-        const mealId = createMeal(db, {
-          userId: ctx.from.id,
-          mealType,
-          source: "photo",
-          telegramFileId: photo.file_id,
-          description: caption || result.items.map((item) => item.name).join(", "),
-          items: toMealItemInputs(result.items),
-          rawClaudeResponse: result,
-        });
-
-        await ctx.reply(buildMealMessage(mealType, result.items, result.notes), {
-          reply_markup: mealActionsKeyboard(mealId),
-        });
-        console.log(`[${ctx.from.id}] Фото обработано успешно в ${new Date().toISOString()}`);
-      });
-    } catch (err) {
-      console.error("Не удалось обработать фото еды:", err);
-      await ctx.reply(
-        replyMessageForError(err, "Не получилось обработать фото, попробуйте ещё раз."),
-      );
+    const groupId = ctx.message.media_group_id;
+    if (groupId) {
+      albums.add(`${ctx.chat.id}:${groupId}`, { ctx, photo: incoming });
+      return;
     }
+    await logPhotoMeal(db, ctx, [incoming]);
   });
 
   bot.callbackQuery(/^delete_meal:(\d+)$/, async (ctx) => {
