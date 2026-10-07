@@ -133,6 +133,7 @@ export function registerMainMenu(bot: Bot<MyContext>, db: Db): void {
   bot.callbackQuery("menu:restart", async (ctx) => {
     await ctx.editMessageText("Открываю анкету...");
     await ctx.answerCallbackQuery();
+    // Повторная анкета пропускает чужие кнопки к обычным обработчикам — в том числе эту.
     if (ctx.conversation.active("onboarding")) return;
     await ctx.conversation.enter("onboarding");
   });

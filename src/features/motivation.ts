@@ -28,6 +28,7 @@ export function motivationConversation(db: Db, api: Api) {
       await ctx.reply(`💭 Сейчас записано:\n\n${profile.motivation}`);
     }
     const motivation = await askMotivation(conversation, ctx, api, profile.motivation, {
+      kind: "profile",
       cancel: { cancelledText: "Хорошо, оставила как было." },
     });
 

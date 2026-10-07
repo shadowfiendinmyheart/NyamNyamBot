@@ -57,9 +57,10 @@ bot.use(createConversation(workoutConversation(db), "workout"));
 bot.use(createAccessGate(db));
 
 // /start шлют и те, кто уже пользуется ботом (например, «Перезапустить бота» в Telegram):
-// анкету открываем, только если профиля ещё нет.
+// анкету открываем, только если профиля ещё нет. Во время анкеты сюда не попадаем:
+// /start перехватывает сам диалог (в первой — «сначала закончите», в повторной — отмена).
 bot.command("start", async (ctx) => {
-  if (!ctx.from || ctx.conversation.active("onboarding")) return;
+  if (!ctx.from) return;
   if (getProfileByUserId(db, ctx.from.id)) {
     await ctx.reply(WELCOME_BACK_TEXT, { reply_markup: mainKeyboard });
     return;

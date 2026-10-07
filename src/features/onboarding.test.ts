@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   ACTIVITY_WORDS,
   GOAL_WORDS,
+  isInRange,
   matchChoiceText,
   MAX_MOTIVATION_LENGTH,
   normalizeMotivation,
-  parseNumberAnswer,
+  parseNumberText,
   SEX_WORDS,
 } from "./onboarding.js";
 import { ACTIVITY_LABEL, GOAL_LABEL, SEX_LABEL } from "./profile.js";
@@ -46,27 +47,54 @@ describe("features/onboarding matchChoiceText", () => {
     expect(matchChoiceText("не знаю", GOAL_LABEL, GOAL_WORDS)).toBeUndefined();
     expect(matchChoiceText("   ", GOAL_LABEL, GOAL_WORDS)).toBeUndefined();
   });
+
+  it("не путает ответ с противоположным вариантом", () => {
+    expect(matchChoiceText("очень мало двигаюсь", ACTIVITY_LABEL, ACTIVITY_WORDS)).toBe(
+      "sedentary",
+    );
+    expect(matchChoiceText("тяжёлый физический труд", ACTIVITY_LABEL, ACTIVITY_WORDS)).toBe(
+      "very_active",
+    );
+  });
+
+  it("с отрицанием или несколькими вариантами сразу — не угадывает", () => {
+    expect(matchChoiceText("не очень активный", ACTIVITY_LABEL, ACTIVITY_WORDS)).toBeUndefined();
+    expect(matchChoiceText("не высокая", ACTIVITY_LABEL, ACTIVITY_WORDS)).toBeUndefined();
+    expect(matchChoiceText("массу сбросить", GOAL_LABEL, GOAL_WORDS)).toBeUndefined();
+    expect(matchChoiceText("не мужчина", SEX_LABEL, SEX_WORDS)).toBeUndefined();
+  });
 });
 
-describe("features/onboarding parseNumberAnswer", () => {
+describe("features/onboarding parseNumberText", () => {
+  it("принимает число с единицами и словами вокруг", () => {
+    expect(parseNumberText("175")).toBe(175);
+    expect(parseNumberText("175 см")).toBe(175);
+    expect(parseNumberText("78,5 кг")).toBe(78.5);
+    expect(parseNumberText("78.5кг.")).toBe(78.5);
+    expect(parseNumberText("мне 30")).toBe(30);
+    expect(parseNumberText("30 лет мне")).toBe(30);
+    expect(parseNumberText("75 кг примерно")).toBe(75);
+    expect(parseNumberText("рост 175")).toBe(175);
+    expect(parseNumberText("где-то 80")).toBe(80);
+    expect(parseNumberText("40 минут")).toBe(40);
+  });
+
+  it("несколько чисел или посторонние слова — не ответ", () => {
+    expect(parseNumberText("78 кг 500 г")).toBeUndefined();
+    expect(parseNumberText("съел 2 яблока")).toBeUndefined();
+    expect(parseNumberText("съел яблоко")).toBeUndefined();
+    expect(parseNumberText("")).toBeUndefined();
+  });
+});
+
+describe("features/onboarding isInRange", () => {
   const height = { min: 100, max: 250, integer: true };
-  const weight = { min: 30, max: 300, integer: false };
 
-  it("принимает число с единицами после него", () => {
-    expect(parseNumberAnswer("175", height)).toBe(175);
-    expect(parseNumberAnswer("175 см", height)).toBe(175);
-    expect(parseNumberAnswer("78,5 кг", weight)).toBe(78.5);
-    expect(parseNumberAnswer("78.5кг", weight)).toBe(78.5);
-  });
-
-  it("отклоняет числа вне диапазона и дробные там, где нужно целое", () => {
-    expect(parseNumberAnswer("90", height)).toBeUndefined();
-    expect(parseNumberAnswer("175.5", height)).toBeUndefined();
-  });
-
-  it("отклоняет текст без числа в начале", () => {
-    expect(parseNumberAnswer("рост 175", height)).toBeUndefined();
-    expect(parseNumberAnswer("съел яблоко", weight)).toBeUndefined();
+  it("проверяет границы и целое", () => {
+    expect(isInRange(175, height)).toBe(true);
+    expect(isInRange(90, height)).toBe(false);
+    expect(isInRange(175.5, height)).toBe(false);
+    expect(isInRange(78.5, { min: 30, max: 300, integer: false })).toBe(true);
   });
 });
 

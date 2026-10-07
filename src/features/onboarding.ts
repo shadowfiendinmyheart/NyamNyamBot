@@ -44,6 +44,80 @@ export async function haltIfCancelled(
   await conversation.halt({ next: text !== "/cancel" });
 }
 
+export interface NumberRange {
+  min: number;
+  max: number;
+  integer: boolean;
+}
+
+function normalizeAnswer(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^a-zа-я0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Слова, которые могут стоять рядом с числом в ответе: единицы и «мне», «примерно»…
+// Короткие — точное совпадение, длинные — начало слова.
+const NUMBER_FILLER_WORDS = [
+  "см", "кг", "г", "м", "ч", "лет", "год", "года", "мин", "мне", "я", "где", "то", "уже",
+  "сантиметр", "килограмм", "минут", "час", "примерн", "около", "почти", "вешу", "рост",
+  "вес", "возраст", "сейчас", "кило",
+];
+
+function isNumberFiller(word: string): boolean {
+  return NUMBER_FILLER_WORDS.some((filler) =>
+    filler.length < 4 ? word === filler : word.startsWith(filler),
+  );
+}
+
+// Число из ответа: «175», «175 см», «78,5кг», «мне 30», «примерно 75 кг». undefined —
+// в ответе нет числа, чисел несколько («78 кг 500 г») или есть посторонние слова
+// («съел 2 яблока») — это не ответ на вопрос.
+export function parseNumberText(text: string): number | undefined {
+  const words = text
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/(\d),(\d)/g, "$1.$2")
+    .replace(/(\d)([a-zа-я])/g, "$1 $2")
+    .replace(/([a-zа-я])(\d)/g, "$1 $2")
+    .split(/[^a-zа-я0-9.]+/)
+    .map((word) => word.replace(/^\.+|\.+$/g, ""))
+    .filter(Boolean);
+
+  const numbers = words.filter((word) => /^\d+(\.\d+)?$/.test(word));
+  if (numbers.length !== 1) return undefined;
+  const others = words.filter((word) => word !== numbers[0]);
+  if (!others.every(isNumberFiller)) return undefined;
+  return Number(numbers[0]);
+}
+
+export function isInRange(value: number, range: NumberRange): boolean {
+  return (
+    value >= range.min && value <= range.max && (!range.integer || Number.isInteger(value))
+  );
+}
+
+function numberHint(range: NumberRange): string {
+  return (
+    `Введите число от ${range.min} до ${range.max}` +
+    `${range.integer ? "" : ", можно с десятичной частью"}.`
+  );
+}
+
+function choiceKeyboard<T extends string>(
+  options: Record<T, string>,
+  prefix: string,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  for (const [value, label] of Object.entries(options) as [T, string][]) {
+    keyboard.text(label, `${prefix}:${value}`).row();
+  }
+  return keyboard;
+}
+
 export async function askChoice<T extends string>(
   conversation: MyConversation,
   ctx: Context,
@@ -52,11 +126,7 @@ export async function askChoice<T extends string>(
   prefix: string,
   cancel?: CancelOptions,
 ): Promise<T> {
-  const keyboard = new InlineKeyboard();
-  for (const [value, label] of Object.entries(options) as [T, string][]) {
-    keyboard.text(label, `${prefix}:${value}`).row();
-  }
-  await ctx.reply(question, { reply_markup: keyboard });
+  await ctx.reply(question, { reply_markup: choiceKeyboard(options, prefix) });
 
   const pattern = new RegExp(`^${prefix}:`);
   if (!cancel) {
@@ -82,7 +152,7 @@ export async function askNumber(
   conversation: MyConversation,
   ctx: Context,
   question: string,
-  options: { min: number; max: number; integer: boolean },
+  range: NumberRange,
   cancel?: CancelOptions,
 ): Promise<number> {
   await ctx.reply(question);
@@ -96,29 +166,23 @@ export async function askNumber(
       await conversation.skip({ next: true });
       continue;
     }
-    const value = Number(text.trim().replace(",", "."));
+    const value = parseNumberText(text);
     // Не число вообще — это обычное сообщение (например, тренировка текстом), а не ответ.
-    if (cancel && !Number.isFinite(value)) await conversation.halt({ next: true });
+    if (cancel && value === undefined) await conversation.halt({ next: true });
+    if (value !== undefined && isInRange(value, range)) return value;
 
-    if (
-      Number.isFinite(value) &&
-      value >= options.min &&
-      value <= options.max &&
-      (!options.integer || Number.isInteger(value))
-    ) {
-      return value;
-    }
-
-    await response.reply(
-      `Введите число от ${options.min} до ${options.max}${options.integer ? "" : ", можно с десятичной частью"}.`,
-    );
+    await response.reply(numberHint(range));
   }
 }
 
 // --- Анкета: шаг назад, ответы текстом, подсказки на посторонний ввод ---
 
-export const ONBOARDING_BACK_DATA = "onb:back";
 const BACK_LABEL = "◀️ Назад";
+// У «Назад» каждого шага свои данные: лишнее нажатие (двойной тап) старой кнопки не
+// уведёт ещё на шаг назад с уже следующего вопроса.
+function backData(step: number): string {
+  return `onb:back:${step}`;
+}
 // Префиксы кнопок анкеты — по ним узнаём нажатия под уже пройденными вопросами.
 export const ONBOARDING_CALLBACK_PATTERN = /^(sex|activity|goal|onb):/;
 
@@ -130,6 +194,12 @@ interface OnboardingMode {
   cancel?: CancelOptions;
 }
 
+// Место вопроса в анкете: заголовок с прогрессом и «◀️ Назад» (нет у первого вопроса).
+interface StepFrame {
+  title: string;
+  backData?: string;
+}
+
 const FINISH_FIRST_TEXT =
   "Сначала закончите анкету — без неё не посчитать дневную норму. Осталось совсем немного 🙂";
 
@@ -137,19 +207,15 @@ function withCancelHint(text: string, mode: OnboardingMode): string {
   return mode.cancel ? `${text}\n/cancel — отменить анкету.` : text;
 }
 
-function normalizeAnswer(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[^a-zа-я0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+function withBack(keyboard: InlineKeyboard, frame: StepFrame): InlineKeyboard {
+  return frame.backData ? keyboard.text(BACK_LABEL, frame.backData) : keyboard;
 }
 
 // Ответ текстом на вопрос с кнопками: номер варианта («2»), название варианта или
-// слово из words в любом слове ответа (короткие — точное совпадение, длинные — начало
-// слова: «мужской» → «муж»). Если подходят несколько — побеждает самое раннее слово:
-// «очень высокая» → «очень», а не «высок».
+// ключевые слова из words. Короткие слова — точное совпадение, длинные — начало слова
+// («мужской» → «муж»), фразы с пробелом — подряд идущие слова («очень высок»).
+// Если ответ подходит к нескольким вариантам («массу сбросить») или в нём есть
+// отрицание («не очень активный») — не угадываем: undefined, пусть выберет кнопкой.
 export function matchChoiceText<T extends string>(
   text: string,
   options: Record<T, string>,
@@ -164,28 +230,34 @@ export function matchChoiceText<T extends string>(
   const byLabel = values.find((value) => normalizeAnswer(options[value]) === answer);
   if (byLabel) return byLabel;
 
-  for (const answerWord of answer.split(" ")) {
-    const value = values.find((candidate) =>
-      (words[candidate] ?? []).some((word) =>
-        word.length < 3 ? answerWord === word : answerWord.startsWith(word),
-      ),
-    );
-    if (value) return value;
+  const matched = new Set<T>();
+  // Сначала фразы: совпавшая фраза вырезается, чтобы её слова не совпали ещё раз
+  // («очень высокий» — это не ещё и «высокая»).
+  let rest = ` ${answer} `;
+  for (const value of values) {
+    for (const phrase of (words[value] ?? []).filter((word) => word.includes(" "))) {
+      const pattern = new RegExp(` ${phrase}\\S*`, "g");
+      if (pattern.test(rest)) {
+        matched.add(value);
+        rest = rest.replace(pattern, " ");
+      }
+    }
   }
-  return undefined;
-}
 
-// Число из ответа, единицы после него допустимы: «175 см», «78,5 кг», «30 лет».
-export function parseNumberAnswer(
-  text: string,
-  options: { min: number; max: number; integer: boolean },
-): number | undefined {
-  const match = /^(\d+(?:[.,]\d+)?)\s*[a-zа-яё.]*$/i.exec(text.trim());
-  if (!match) return undefined;
-  const value = Number(match[1].replace(",", "."));
-  if (value < options.min || value > options.max) return undefined;
-  if (options.integer && !Number.isInteger(value)) return undefined;
-  return value;
+  const restWords = rest.trim().split(" ").filter(Boolean);
+  if (restWords.includes("не")) return undefined;
+  for (const answerWord of restWords) {
+    for (const value of values) {
+      const hit = (words[value] ?? []).some(
+        (word) =>
+          !word.includes(" ") &&
+          (word.length < 3 ? answerWord === word : answerWord.startsWith(word)),
+      );
+      if (hit) matched.add(value);
+    }
+  }
+
+  return matched.size === 1 ? [...matched][0] : undefined;
 }
 
 export const SEX_WORDS: Partial<Record<Sex, string[]>> = {
@@ -198,7 +270,7 @@ export const ACTIVITY_WORDS: Partial<Record<ActivityLevel, string[]>> = {
   light: ["легк", "небольш"],
   moderate: ["средн", "умерен"],
   active: ["высок"],
-  very_active: ["очень"],
+  very_active: ["очень высок", "оч высок", "тяжел", "каждый день"],
 };
 
 export const GOAL_WORDS: Partial<Record<Goal, string[]>> = {
@@ -207,15 +279,18 @@ export const GOAL_WORDS: Partial<Record<Goal, string[]>> = {
   gain: ["набор", "набрат", "масс"],
 };
 
-// Нажатие кнопки, которая не отвечает на текущий вопрос. Кнопки прошлых вопросов анкеты
-// не работают; прочие в повторной анкете обрабатываются как обычно, а в первой — ждут.
+// Нажатие кнопки, которая не отвечает на текущий вопрос. Внутри анкеты кнопки прошлых
+// вопросов не работают. Остальное при возможности отмены обрабатывается как обычно
+// (вне анкеты — в том числе старые кнопки анкеты, у них свой обработчик), а в первой
+// анкете ждёт её окончания.
 async function handleStrayCallback(
   conversation: MyConversation,
   response: Context,
   mode: OnboardingMode,
+  inQuestionnaire: boolean,
 ): Promise<void> {
   const data = response.callbackQuery?.data ?? "";
-  if (ONBOARDING_CALLBACK_PATTERN.test(data)) {
+  if (inQuestionnaire && ONBOARDING_CALLBACK_PATTERN.test(data)) {
     await response.answerCallbackQuery({
       text: "Этот вопрос уже пройден — ответьте на последний вопрос анкеты.",
     });
@@ -225,8 +300,8 @@ async function handleStrayCallback(
   await response.answerCallbackQuery({ text: FINISH_FIRST_TEXT, show_alert: true });
 }
 
-// Команда или кнопка главного меню посреди анкеты: в повторной — отмена, в первой — просьба
-// закончить. true — ввод обработан и вопрос ждёт дальше.
+// Команда или кнопка главного меню вместо ответа: с отменой — отмена, в первой анкете —
+// просьба закончить. true — ввод обработан и вопрос ждёт дальше.
 async function handleMenuInput(
   conversation: MyConversation,
   response: Context,
@@ -241,8 +316,7 @@ async function handleMenuInput(
 
 interface Question<T> {
   text: string;
-  // Есть ли «◀️ Назад» (у первого вопроса нет).
-  back: boolean;
+  frame: StepFrame;
   keyboard?: InlineKeyboard;
   fromCallback?: (data: string) => T | undefined;
   // Значение или подсказка, почему ответ не подошёл.
@@ -259,7 +333,9 @@ async function askQuestion<T>(
   question: Question<T>,
   mode: OnboardingMode,
 ): Promise<T | Back> {
-  const message = await ctx.reply(question.text, { reply_markup: question.keyboard });
+  const text = `${question.frame.title}${question.text}`;
+  const keyboard = withBack(question.keyboard ?? new InlineKeyboard(), question.frame);
+  const message = await ctx.reply(text, { reply_markup: keyboard });
 
   // Убираем кнопки у вопроса, на который ответили, чтобы их нельзя было нажать позже.
   const close = (label?: string) =>
@@ -267,7 +343,7 @@ async function askQuestion<T>(
       const { chat, message_id: messageId } = message;
       const empty = { reply_markup: new InlineKeyboard() };
       await (label
-        ? api.editMessageText(chat.id, messageId, `${question.text}\n\n✅ ${label}`, empty)
+        ? api.editMessageText(chat.id, messageId, `${text}\n\n✅ ${label}`, empty)
         : api.editMessageReplyMarkup(chat.id, messageId, empty)
       ).catch(() => {});
     });
@@ -277,7 +353,7 @@ async function askQuestion<T>(
 
     const data = response.callbackQuery?.data;
     if (data !== undefined) {
-      if (data === ONBOARDING_BACK_DATA && question.back) {
+      if (question.frame.backData && data === question.frame.backData) {
         await response.answerCallbackQuery();
         await close();
         return BACK;
@@ -288,14 +364,14 @@ async function askQuestion<T>(
         await close(question.answerLabel?.(value));
         return value;
       }
-      await handleStrayCallback(conversation, response, mode);
+      await handleStrayCallback(conversation, response, mode, true);
       continue;
     }
 
-    const text = response.message?.text?.trim();
-    if (text !== undefined) {
-      if (await handleMenuInput(conversation, response, text, mode)) continue;
-      const parsed = question.fromText(text);
+    const answer = response.message?.text?.trim();
+    if (answer !== undefined) {
+      if (await handleMenuInput(conversation, response, answer, mode)) continue;
+      const parsed = question.fromText(answer);
       if ("value" in parsed) {
         await close(question.answerLabel?.(parsed.value));
         return parsed.value;
@@ -312,25 +388,22 @@ async function askQuestion<T>(
   }
 }
 
-function backKeyboard(keyboard = new InlineKeyboard()): InlineKeyboard {
-  return keyboard.text(BACK_LABEL, ONBOARDING_BACK_DATA);
+interface ChoiceSpec<T extends string> {
+  text: string;
+  options: Record<T, string>;
+  words: Partial<Record<T, string[]>>;
+  prefix: string;
 }
 
 function askOnboardingChoice<T extends string>(
   conversation: MyConversation,
   ctx: Context,
   api: Api,
-  text: string,
-  options: Record<T, string>,
-  words: Partial<Record<T, string[]>>,
-  prefix: string,
-  back: boolean,
+  frame: StepFrame,
   mode: OnboardingMode,
+  spec: ChoiceSpec<T>,
 ): Promise<T | Back> {
-  const keyboard = new InlineKeyboard();
-  for (const [value, label] of Object.entries(options) as [T, string][]) {
-    keyboard.text(label, `${prefix}:${value}`).row();
-  }
+  const { text, options, words, prefix } = spec;
   const hint = "Выберите вариант кнопкой под вопросом или напишите его словами.";
   return askQuestion<T>(
     conversation,
@@ -338,8 +411,8 @@ function askOnboardingChoice<T extends string>(
     api,
     {
       text,
-      back,
-      keyboard: back ? backKeyboard(keyboard) : keyboard,
+      frame,
+      keyboard: choiceKeyboard(options, prefix),
       fromCallback: (data) => {
         const value = data.startsWith(`${prefix}:`) ? data.slice(prefix.length + 1) : undefined;
         return value !== undefined && value in options ? (value as T) : undefined;
@@ -359,25 +432,21 @@ function askOnboardingNumber(
   conversation: MyConversation,
   ctx: Context,
   api: Api,
-  text: string,
-  options: { min: number; max: number; integer: boolean },
-  back: boolean,
+  frame: StepFrame,
   mode: OnboardingMode,
+  spec: { text: string; range: NumberRange },
 ): Promise<number | Back> {
-  const hint =
-    `Введите число от ${options.min} до ${options.max}` +
-    `${options.integer ? "" : ", можно с десятичной частью"}.`;
+  const hint = `${numberHint(spec.range)} Например: «${spec.range.min + 10}».`;
   return askQuestion<number>(
     conversation,
     ctx,
     api,
     {
-      text,
-      back,
-      keyboard: back ? backKeyboard() : undefined,
+      text: spec.text,
+      frame,
       fromText: (answer) => {
-        const value = parseNumberAnswer(answer, options);
-        return value === undefined ? { hint } : { value };
+        const value = parseNumberText(answer);
+        return value !== undefined && isInRange(value, spec.range) ? { value } : { hint };
       },
       nonTextHint: `Сейчас жду ответ числом. ${hint}`,
     },
@@ -404,39 +473,48 @@ export function normalizeMotivation(text: string): string | null {
     : trimmed;
 }
 
+// Где задаётся вопрос «зачем вам бот»: шаг анкеты (прогресс, «◀️ Назад», на посторонние
+// сообщения — подсказка) или правка из профиля (отменяется, а постороннее сообщение
+// закрывает диалог и уходит обычным обработчикам).
+export type MotivationPlace =
+  | { kind: "questionnaire"; mode: OnboardingMode; frame: StepFrame }
+  | { kind: "profile"; cancel: CancelOptions };
+
 // Открытый вопрос «зачем вам бот» — ответ текстом или голосом (голос — только после
 // подтверждения расшифровки). Кнопка под вопросом оставляет current: «Пропустить», если
 // ответа ещё нет, и «Оставить как есть», если есть. Расшифровка хранится в тексте
 // сообщения с кнопками «Да/Нет», поэтому отдельного состояния для голоса не нужно.
-// back — вопрос задаётся внутри анкеты: есть «◀️ Назад», а на посторонние сообщения
-// отвечаем подсказкой. Без back (правка из профиля) такое сообщение закрывает диалог.
 export async function askMotivation(
   conversation: MyConversation,
   ctx: Context,
   api: Api,
   current: string | null,
-  options: { cancel?: CancelOptions; back: true },
+  place: { kind: "questionnaire"; mode: OnboardingMode; frame: StepFrame },
 ): Promise<string | null | Back>;
 export async function askMotivation(
   conversation: MyConversation,
   ctx: Context,
   api: Api,
   current: string | null,
-  options?: { cancel?: CancelOptions; back?: false },
+  place: { kind: "profile"; cancel: CancelOptions },
 ): Promise<string | null>;
 export async function askMotivation(
   conversation: MyConversation,
   ctx: Context,
   api: Api,
   current: string | null,
-  { cancel, back = false }: { cancel?: CancelOptions; back?: boolean } = {},
+  place: MotivationPlace,
 ): Promise<string | null | Back> {
+  const inQuestionnaire = place.kind === "questionnaire";
+  const mode: OnboardingMode = inQuestionnaire ? place.mode : { cancel: place.cancel };
+  const frame: StepFrame = inQuestionnaire ? place.frame : { title: "" };
+
   const keyboard = new InlineKeyboard().text(
     current ? "✅ Оставить как есть" : "⏭ Пропустить",
     MOTIVATION_SKIP_DATA,
   );
-  const question = await ctx.reply(MOTIVATION_QUESTION, {
-    reply_markup: back ? backKeyboard(keyboard.row()) : keyboard,
+  const question = await ctx.reply(`${frame.title}${MOTIVATION_QUESTION}`, {
+    reply_markup: withBack(frame.backData ? keyboard.row() : keyboard, frame),
   });
   const done = async <T extends string | null | Back>(motivation: T): Promise<T> => {
     await conversation.external(() =>
@@ -454,14 +532,13 @@ export async function askMotivation(
 
   for (;;) {
     const response = await conversation.wait();
-    if (cancel) await haltIfCancelled(conversation, response, cancel);
 
     const data = response.callbackQuery?.data;
     if (data === MOTIVATION_SKIP_DATA) {
       await response.answerCallbackQuery();
       return done(current);
     }
-    if (data === ONBOARDING_BACK_DATA && back) {
+    if (frame.backData && data === frame.backData) {
       await response.answerCallbackQuery();
       return done(BACK);
     }
@@ -475,12 +552,16 @@ export async function askMotivation(
       if (text !== undefined) return done(normalizeMotivation(text));
       continue;
     }
+    if (data !== undefined) {
+      await handleStrayCallback(conversation, response, mode, inQuestionnaire);
+      continue;
+    }
 
     const text = response.message?.text?.trim();
     if (text !== undefined) {
-      // Сюда команды и кнопки меню доходят только в онбординге (без cancel): его
-      // нужно пройти до конца.
       if (isCancelInput(text)) {
+        if (mode.cancel) await haltIfCancelled(conversation, response, mode.cancel);
+        // Без отмены — первая анкета, её нужно пройти до конца.
         await response.reply(`Сначала ответьте на вопрос. ${retryHint}`);
         continue;
       }
@@ -500,15 +581,9 @@ export async function askMotivation(
       continue;
     }
 
-    if (data !== undefined) {
-      await handleStrayCallback(conversation, response, { cancel });
-      continue;
-    }
-    // Прочие сообщения (фото…): в анкете — подсказка, при правке из профиля сообщение
-    // закрывает диалог и уходит обычным обработчикам.
     if (response.message) {
-      if (!back) await conversation.halt({ next: true });
-      await response.reply(withCancelHint(`Сейчас жду ответ на вопрос. ${retryHint}`, { cancel }));
+      if (!inQuestionnaire) await conversation.halt({ next: true });
+      await response.reply(withCancelHint(`Сейчас жду ответ на вопрос. ${retryHint}`, mode));
       continue;
     }
     await conversation.skip({ next: true });
@@ -525,6 +600,33 @@ export function registerOnboarding(bot: Bot<MyContext>): void {
     });
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});
   });
+}
+
+interface OnboardingAnswers {
+  sex?: Sex;
+  age?: number;
+  heightCm?: number;
+  weightKg?: number;
+  activityLevel?: ActivityLevel;
+  goal?: Goal;
+  motivation?: string | null;
+}
+
+// Все ключи анкеты — для проверки, что каждый шаг записал ответ.
+const ANSWER_KEYS: Record<keyof OnboardingAnswers, true> = {
+  sex: true,
+  age: true,
+  heightCm: true,
+  weightKg: true,
+  activityLevel: true,
+  goal: true,
+  motivation: true,
+};
+
+function isComplete(answers: OnboardingAnswers): answers is Required<OnboardingAnswers> {
+  return (Object.keys(ANSWER_KEYS) as (keyof OnboardingAnswers)[]).every(
+    (key) => answers[key] !== undefined,
+  );
 }
 
 export function onboardingConversation(db: Db, api: Api) {
@@ -546,74 +648,71 @@ export function onboardingConversation(db: Db, api: Api) {
     }
 
     // Шаги по порядку; «◀️ Назад» возвращает на предыдущий, и на него отвечают заново.
-    const answers: {
-      sex?: Sex;
-      age?: number;
-      heightCm?: number;
-      weightKg?: number;
-      activityLevel?: ActivityLevel;
-      goal?: Goal;
-      motivation?: string | null;
-    } = {};
+    const answers: OnboardingAnswers = {};
+    type Step = (frame: StepFrame) => Promise<Back | undefined>;
 
     // Запоминает ответ шага; BACK пробрасывает дальше — шаг ничего не записал.
-    const keep =
-      <K extends keyof typeof answers>(key: K) =>
-      (value: (typeof answers)[K] | Back): Back | undefined => {
+    const save =
+      <K extends keyof OnboardingAnswers>(key: K) =>
+      (value: OnboardingAnswers[K] | Back): Back | undefined => {
         if (value === BACK) return BACK;
         answers[key] = value;
         return undefined;
       };
 
-    const steps: Array<(title: string, back: boolean) => Promise<Back | undefined>> = [
-      async (title, back) =>
-        keep("sex")(
-          await askOnboardingChoice(conversation, ctx, api, `${title}Укажите пол:`,
-            SEX_LABEL, SEX_WORDS, "sex", back, mode),
-        ),
-      async (title, back) =>
-        keep("age")(
-          await askOnboardingNumber(conversation, ctx, api, `${title}Сколько вам лет?`,
-            { min: 10, max: 100, integer: true }, back, mode),
-        ),
-      async (title, back) =>
-        keep("heightCm")(
-          await askOnboardingNumber(conversation, ctx, api, `${title}Какой у вас рост, см?`,
-            { min: 100, max: 250, integer: true }, back, mode),
-        ),
-      async (title, back) =>
-        keep("weightKg")(
-          await askOnboardingNumber(conversation, ctx, api, `${title}Какой у вас текущий вес, кг?`,
-            { min: 30, max: 300, integer: false }, back, mode),
-        ),
-      async (title, back) =>
-        keep("activityLevel")(
-          await askOnboardingChoice(conversation, ctx, api, `${title}${ACTIVITY_QUESTION}`,
-            ACTIVITY_LABEL, ACTIVITY_WORDS, "activity", back, mode),
-        ),
-      async (title, back) =>
-        keep("goal")(
-          await askOnboardingChoice(conversation, ctx, api, `${title}Какая у вас цель?`,
-            GOAL_LABEL, GOAL_WORDS, "goal", back, mode),
-        ),
-      async () =>
-        keep("motivation")(
+    const choice =
+      <K extends "sex" | "activityLevel" | "goal">(
+        key: K,
+        spec: ChoiceSpec<NonNullable<OnboardingAnswers[K]>>,
+      ): Step =>
+      async (frame) =>
+        save(key)(await askOnboardingChoice(conversation, ctx, api, frame, mode, spec));
+
+    const number =
+      (key: "age" | "heightCm" | "weightKg", text: string, range: NumberRange): Step =>
+      async (frame) =>
+        save(key)(await askOnboardingNumber(conversation, ctx, api, frame, mode, { text, range }));
+
+    const steps: Step[] = [
+      choice("sex", { text: "Укажите пол:", options: SEX_LABEL, words: SEX_WORDS, prefix: "sex" }),
+      number("age", "Сколько вам лет?", { min: 10, max: 100, integer: true }),
+      number("heightCm", "Какой у вас рост, см?", { min: 100, max: 250, integer: true }),
+      number("weightKg", "Какой у вас текущий вес, кг?", { min: 30, max: 300, integer: false }),
+      choice("activityLevel", {
+        text: ACTIVITY_QUESTION,
+        options: ACTIVITY_LABEL,
+        words: ACTIVITY_WORDS,
+        prefix: "activity",
+      }),
+      choice("goal", {
+        text: "Какая у вас цель?",
+        options: GOAL_LABEL,
+        words: GOAL_WORDS,
+        prefix: "goal",
+      }),
+      async (frame) =>
+        save("motivation")(
           await askMotivation(conversation, ctx, api, previous?.motivation ?? null, {
-            ...mode,
-            back: true,
+            kind: "questionnaire",
+            mode,
+            frame,
           }),
         ),
     ];
 
     let step = 0;
     while (step < steps.length) {
-      const result = await steps[step](`(${step + 1}/${steps.length}) `, step > 0);
+      const frame: StepFrame = {
+        title: `(${step + 1}/${steps.length}) `,
+        backData: step > 0 ? backData(step) : undefined,
+      };
+      const result = await steps[step](frame);
       step += result === BACK ? -1 : 1;
     }
 
-    // Все шаги пройдены, значит каждый записал свой ответ.
-    const { sex, age, heightCm, weightKg, activityLevel, goal, motivation = null } =
-      answers as Required<typeof answers>;
+    // Сюда доходим, только пройдя все шаги, — каждый записал ответ.
+    if (!isComplete(answers)) throw new Error("Анкета завершилась без всех ответов");
+    const { sex, age, heightCm, weightKg, activityLevel, goal, motivation } = answers;
     const targets = calculateDailyTargets({ sex, age, heightCm, weightKg, activityLevel, goal });
 
     await conversation.external(() =>
