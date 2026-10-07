@@ -74,11 +74,10 @@ function backKeyboard(): InlineKeyboard {
 
 export function profileKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
-    .text("⚖️ Записать вес", "menu:weight")
     .text("🏃 Активность", "menu:activity")
+    .text("🕐 Часовой пояс", "menu:timezone")
     .row()
     .text("✍️ Зачем мне бот", "menu:motivation")
-    .text("🕐 Часовой пояс", "menu:timezone")
     .row()
     .text("🔄 Пройти анкету заново", "menu:restart")
     .row()
