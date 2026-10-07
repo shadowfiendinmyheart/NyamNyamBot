@@ -9,7 +9,7 @@ import type { DaySummary } from "../ai/coach.js";
 import type { WeightLogRow } from "../db/weightLog.js";
 import { getWorkoutsBetween, sumBurnedKcal, type WorkoutEntry } from "../db/workouts.js";
 import {
-  workoutKcalBonus,
+  dayKcalTarget,
   type ActivityLevel,
   type NutritionTargets,
 } from "../nutrition/calculations.js";
@@ -78,8 +78,8 @@ export function buildTodayReport(
   }
 
   if (targets) {
-    const bonus = targets.activityLevel ? workoutKcalBonus(targets.activityLevel, burnedKcal) : 0;
-    const dayTarget = targets.dailyKcalTarget + bonus;
+    const dayTarget = dayKcalTarget(targets.dailyKcalTarget, targets.activityLevel, burnedKcal);
+    const bonus = dayTarget - targets.dailyKcalTarget;
     const remainingKcal = dayTarget - totals.kcal;
     if (workouts.length > 0) parts.push("");
     parts.push(

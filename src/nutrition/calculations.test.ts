@@ -3,6 +3,8 @@ import {
   calculateBmr,
   calculateDailyTargets,
   calculateWorkoutKcal,
+  dayKcalTarget,
+  rescaleWorkoutKcal,
   workoutKcalBonus,
   type ProfileInput,
 } from "./calculations.js";
@@ -121,5 +123,24 @@ describe("workoutKcalBonus", () => {
     expect(workoutKcalBonus("sedentary", 500)).toBe(500);
     expect(workoutKcalBonus("light", 500)).toBe(0);
     expect(workoutKcalBonus("very_active", 500)).toBe(0);
+  });
+});
+
+describe("dayKcalTarget", () => {
+  it("прибавляет расход только при сидячем уровне", () => {
+    expect(dayKcalTarget(1800, "sedentary", 300)).toBe(2100);
+    expect(dayKcalTarget(1800, "moderate", 300)).toBe(1800);
+    expect(dayKcalTarget(1800, undefined, 300)).toBe(1800);
+  });
+});
+
+describe("rescaleWorkoutKcal", () => {
+  it("пересчитывает расход по времени и интенсивности, сохраняя вес записи", () => {
+    // Бег 30 мин средне при 90 кг: 9.8 × 90 × 0.5 = 441.
+    const from = { activityType: "running" as const, intensity: "moderate" as const, durationMin: 30 };
+    expect(rescaleWorkoutKcal(441, from, { ...from, durationMin: 60 })).toBe(882);
+    expect(rescaleWorkoutKcal(441, from, { ...from, intensity: "high" })).toBe(
+      calculateWorkoutKcal({ ...from, intensity: "high", weightKg: 90 }),
+    );
   });
 });

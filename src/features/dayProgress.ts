@@ -3,8 +3,8 @@ import type * as schema from "../db/schema.js";
 import { getMealsForUserOnDate, sumNutrition } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
 import { getWorkoutsBetween, sumBurnedKcal } from "../db/workouts.js";
-import { workoutKcalBonus } from "../nutrition/calculations.js";
-import { getDayBoundsUtc, getZonedYmd } from "../utils/dates.js";
+import { dayKcalTarget } from "../nutrition/calculations.js";
+import { getTodayBoundsUtc } from "../utils/dates.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
@@ -33,13 +33,13 @@ export function buildDayProgressLine(
   timeZone: string,
   dayLabel: string | null = null,
 ): string {
-  const { start, end } = getDayBoundsUtc(getZonedYmd(at, timeZone), timeZone);
+  const { start, end } = getTodayBoundsUtc(at, timeZone);
   const eaten = sumNutrition(getMealsForUserOnDate(db, userId, start, end)).kcal;
 
   const profile = getProfileByUserId(db, userId);
   if (!profile) return formatDayProgress(eaten, undefined, dayLabel);
 
   const burned = sumBurnedKcal(getWorkoutsBetween(db, userId, start, end));
-  const target = profile.dailyKcalTarget + workoutKcalBonus(profile.activityLevel, burned);
+  const target = dayKcalTarget(profile.dailyKcalTarget, profile.activityLevel, burned);
   return formatDayProgress(eaten, target, dayLabel);
 }

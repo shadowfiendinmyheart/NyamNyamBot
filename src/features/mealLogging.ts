@@ -7,6 +7,7 @@ import type { MyContext } from "../context.js";
 import {
   analyzeFood,
   FoodAnalyzerError,
+  type AnalyzeFoodResult,
   type FoodImage,
   type FoodItem,
   type ImageMimeType,
@@ -16,7 +17,6 @@ import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
 import {
   createMeal,
   deleteMealForUser,
-  getMealById,
   getMealItemsForMeals,
   joinPhotoFileIds,
   sumNutrition,
@@ -113,19 +113,28 @@ export function buildStoredMealMessage(
   );
 }
 
-// Ответ на новую запись еды: оценка, прогресс за день и кнопки действий.
+interface LoggedMeal {
+  mealId: number;
+  userId: number;
+  mealType: MealType;
+  loggedAt: Date;
+  result: AnalyzeFoodResult;
+}
+
+// Ответ на новую запись еды: оценка, прогресс за день записи и кнопки действий.
+// Подпись дня — относительно момента ответа, а не исходного сообщения.
 async function replyLoggedMeal(
   db: Db,
   ctx: MyContext,
-  mealId: number,
-  userId: number,
   timeZone: string,
+  meal: LoggedMeal,
 ): Promise<void> {
-  const meal = getMealById(db, mealId, userId);
-  if (!meal) return;
-  await ctx.reply(buildStoredMealMessage(db, meal, timeZone), {
-    reply_markup: mealActionsKeyboard(mealId),
-  });
+  const dayLabel = formatMealDay(meal.loggedAt, new Date(), timeZone);
+  const progress = buildDayProgressLine(db, meal.userId, meal.loggedAt, timeZone, dayLabel);
+  await ctx.reply(
+    buildMealMessage(meal.mealType, meal.result.items, meal.result.notes, dayLabel, progress),
+    { reply_markup: mealActionsKeyboard(meal.mealId) },
+  );
 }
 
 // Скачивает фото из Telegram по file_id (фото не храним у себя).
@@ -170,17 +179,20 @@ async function logPhotoMeal(db: Db, ctx: MyContext, photos: IncomingPhoto[]): Pr
       }
 
       const timeZone = getUserTimeZone(db, userId);
+      const loggedAt = new Date();
+      const mealType = determineMealType(loggedAt, timeZone);
       const mealId = createMeal(db, {
         userId,
-        mealType: determineMealType(new Date(), timeZone),
+        mealType,
         source: "photo",
         telegramFileId: joinPhotoFileIds(ordered.map((photo) => photo.fileId)),
         description: caption || result.items.map((item) => item.name).join(", "),
         items: toMealItemInputs(result.items),
         rawClaudeResponse: result,
+        loggedAt,
       });
 
-      await replyLoggedMeal(db, ctx, mealId, userId, timeZone);
+      await replyLoggedMeal(db, ctx, timeZone, { mealId, userId, mealType, loggedAt, result });
       console.log(`[${userId}] Фото обработано успешно в ${new Date().toISOString()}`);
     });
   } catch (err) {
@@ -338,8 +350,7 @@ export async function logDescribedMeal(
       return;
     }
 
-    // Подпись дня — относительно момента ответа, а не исходного сообщения.
-    await replyLoggedMeal(db, ctx, mealId, userId, timeZone);
+    await replyLoggedMeal(db, ctx, timeZone, { mealId, userId, mealType, loggedAt, result });
   } catch (err) {
     console.error("Не удалось обработать описание еды:", err);
     await ctx.reply(
@@ -368,18 +379,24 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
   // Голосовое с едой пишем сразу и показываем расшифровку: неточную запись можно
   // исправить (✏️) или удалить (🗑) под ней.
   bot.on("message:voice", async (ctx) => {
-    let text: string | undefined;
     try {
-      text = await withChatAction(ctx, "typing", () => transcribeVoiceMessage(ctx));
+      await withChatAction(ctx, "typing", async () => {
+        const text = await transcribeVoiceMessage(ctx);
+        if (text === undefined) return;
+        await ctx.reply(buildVoiceTranscriptMessage(text));
+
+        // «Спасибо» голосом — как текстом: без запроса к ИИ.
+        const smallTalk = smallTalkReply(text);
+        if (smallTalk) {
+          await ctx.reply(smallTalk);
+          return;
+        }
+        await logDescribedMeal(db, ctx, text, "voice");
+      });
     } catch (err) {
       console.error("Не удалось обработать голосовое сообщение:", err);
       await ctx.reply("Не получилось обработать голосовое сообщение, попробуйте ещё раз.");
-      return;
     }
-    if (text === undefined) return;
-    await ctx.reply(buildVoiceTranscriptMessage(text));
-    const transcript = text;
-    await withChatAction(ctx, "typing", () => logDescribedMeal(db, ctx, transcript, "voice"));
   });
 
   // Кнопки «Да/Нет» в сообщениях, отправленных до записи голосовой еды без подтверждения.

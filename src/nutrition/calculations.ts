@@ -124,6 +124,28 @@ export function workoutKcalBonus(activityLevel: ActivityLevel, burnedKcal: numbe
   return activityLevel === "sedentary" ? burnedKcal : 0;
 }
 
+// Норма ккал на день с учётом расхода тренировок (см. workoutKcalBonus). Без уровня
+// активности расход к норме не добавляется.
+export function dayKcalTarget(
+  dailyKcalTarget: number,
+  activityLevel: ActivityLevel | undefined,
+  burnedKcal: number,
+): number {
+  return dailyKcalTarget + (activityLevel ? workoutKcalBonus(activityLevel, burnedKcal) : 0);
+}
+
+// Расход после правки длительности/интенсивности: старый расход масштабируется по
+// MET × время, так что вес остаётся тем, с которым тренировку записали, а не текущим.
+export function rescaleWorkoutKcal(
+  kcalBurned: number,
+  from: Omit<WorkoutInput, "weightKg">,
+  to: Omit<WorkoutInput, "weightKg">,
+): number {
+  const load = ({ activityType, intensity, durationMin }: Omit<WorkoutInput, "weightKg">) =>
+    WORKOUT_MET[activityType][intensity] * durationMin;
+  return Math.round((kcalBurned * load(to)) / load(from));
+}
+
 function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }

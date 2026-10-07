@@ -160,17 +160,19 @@ export function correctionConversation(db: Db, api: Api) {
     await response.reply("⏳ Пересчитываю с учётом уточнения…");
 
     // Фото не храним у себя — при коррекции заново скачиваем их из Telegram по file_id
-    // (у альбома их несколько). Если не получилось, пересчитываем только по тексту
-    // предыдущей оценки.
+    // (у альбома их несколько). Какие не скачались — пропускаем; если ни одного,
+    // пересчитываем только по тексту предыдущей оценки.
     const fileIds = meal.source === "photo" ? mealPhotoFileIds(meal) : [];
-    const downloadImages = async (): Promise<FoodImage[] | undefined> => {
-      if (fileIds.length === 0) return undefined;
-      try {
-        return await Promise.all(fileIds.map((fileId) => downloadPhoto(api, fileId)));
-      } catch (err) {
-        console.error("Не удалось скачать фото из Telegram для коррекции:", err);
-        return undefined;
+    const downloadImages = async (): Promise<FoodImage[]> => {
+      const results = await Promise.allSettled(
+        fileIds.map((fileId) => downloadPhoto(api, fileId)),
+      );
+      const images: FoodImage[] = [];
+      for (const result of results) {
+        if (result.status === "fulfilled") images.push(result.value);
+        else console.error("Не удалось скачать фото из Telegram для коррекции:", result.reason);
       }
+      return images;
     };
 
     let result: AnalyzeFoodResult;

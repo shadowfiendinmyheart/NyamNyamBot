@@ -16,6 +16,7 @@ import {
 } from "../db/workouts.js";
 import {
   calculateWorkoutKcal,
+  rescaleWorkoutKcal,
   MAX_WORKOUT_MIN,
   type ActivityLevel,
   type WorkoutActivityType,
@@ -329,7 +330,8 @@ type WorkoutEditOutcome =
   | { status: "noProfile" };
 
 // Правка тренировки кнопкой «✏️ Изменить»: длительность или интенсивность, расход
-// пересчитывается по весу из профиля. api — внешний bot.api: внутри
+// пересчитывается с весом, с которым тренировку записали (rescaleWorkoutKcal); профиль
+// нужен для подписи про норму. api — внешний bot.api: внутри
 // conversation.external нельзя пользоваться ctx диалога.
 export function workoutEditConversation(db: Db, api: Api) {
   return async function workoutEdit(
@@ -381,11 +383,10 @@ export function workoutEditConversation(db: Db, api: Api) {
     const outcome = await conversation.external((): WorkoutEditOutcome => {
       const profile = getProfileByUserId(db, userId);
       if (!profile) return { status: "noProfile" };
-      const kcalBurned = calculateWorkoutKcal({
+      const kcalBurned = rescaleWorkoutKcal(workout.kcalBurned, workout, {
         activityType: workout.activityType,
         intensity,
         durationMin,
-        weightKg: profile.weightKg,
       });
       const updated = updateWorkout(db, workoutId, userId, { durationMin, intensity, kcalBurned });
       return updated
@@ -479,9 +480,11 @@ export function registerWorkout(bot: Bot<MyContext>, db: Db): void {
       return;
     }
 
-    if (ctx.conversation.active("workoutEdit")) {
+    // Любой идущий диалог (запись тренировки, правка еды, анкета…) перехватит ответ
+    // раньше правки — поэтому сначала его нужно закончить.
+    if (Object.keys(ctx.conversation.active()).length > 0) {
       await ctx.answerCallbackQuery({
-        text: "Уже идёт правка тренировки, закончите её или отправьте /cancel.",
+        text: "Сначала закончите текущий диалог или отправьте /cancel.",
         show_alert: true,
       });
       return;
