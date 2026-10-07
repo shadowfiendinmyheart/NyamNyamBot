@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
+import { proxyHttpAgent } from "../utils/proxy.js";
 
 let client: Anthropic | undefined;
 
@@ -11,6 +12,7 @@ export function getClient(): Anthropic {
     // всё это время сидит без ответа. Лучше быстро сказать «попробуйте ещё раз».
     timeout: 90_000,
     maxRetries: 1,
+    ...(proxyHttpAgent ? { httpAgent: proxyHttpAgent } : {}),
     // При работе через сторонний прокси (ANTHROPIC_BASE_URL) официальный
     // User-Agent SDK ("Anthropic/JS ...") блокируется файрволом прокси (Cloudflare
     // 403 "Your request was blocked") — с прямым api.anthropic.com такой проблемы нет.

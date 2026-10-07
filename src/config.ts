@@ -12,9 +12,9 @@ export const config = {
   get botToken(): string {
     return required("BOT_TOKEN");
   },
-  // HTTP-прокси для всех запросов к Telegram (например, локальный порт VPN-клиента).
-  // Пусто — подключение к api.telegram.org напрямую.
-  telegramProxyUrl: process.env.TELEGRAM_PROXY_URL || undefined,
+  // HTTP-прокси для всех внешних запросов бота: Telegram, ИИ, распознавание голоса
+  // (например, локальный порт VPN-клиента). Пусто — все запросы идут напрямую.
+  proxyUrl: process.env.PROXY_URL || undefined,
   // Если задан ANTHROPIC_BASE_URL (сторонний Anthropic-совместимый прокси), ключ
   // берётся из CUSTOMIX_API_KEY, а не из ANTHROPIC_API_KEY — это разные ключи от
   // разных сервисов, и переключение прокси не должно затирать прямой ключ Anthropic.

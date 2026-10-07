@@ -1,5 +1,6 @@
 import OpenAI, { toFile } from "openai";
 import { config } from "../config.js";
+import { proxyDispatcher } from "../utils/proxy.js";
 import { TranscriberError } from "../ai/transcriber.js";
 import type { TranscribeAudioInput } from "../ai/transcriber.js";
 
@@ -12,6 +13,7 @@ function getClient(): OpenAI {
     baseURL: config.openaiBaseUrl,
     timeout: 60_000,
     maxRetries: 1,
+    ...(proxyDispatcher ? { fetchOptions: { dispatcher: proxyDispatcher } } : {}),
   });
   return client;
 }
