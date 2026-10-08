@@ -32,7 +32,11 @@ vi.mock("openai", () => ({
 }));
 
 vi.mock("../config.js", () => ({
-  config: { openaiApiKey: "test-key", openaiBaseUrl: "https://proxy.example/v1" },
+  config: {
+    openaiApiKey: "test-key",
+    openaiBaseUrl: "https://proxy.example/v1",
+    openaiTranscribeModel: "whisper-1",
+  },
 }));
 
 const { transcribeAudio } = await import("./transcribeAudio.js");

@@ -33,6 +33,8 @@ export const config = {
   },
   // Пусто/не задано — используется официальный endpoint OpenAI по умолчанию из SDK.
   openaiBaseUrl: process.env.OPENAI_BASE_URL || undefined,
+  // У агрегаторов имя модели бывает с префиксом провайдера (routerai.ru — «openai/whisper-1»).
+  openaiTranscribeModel: process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1",
   inviteCodes: (process.env.INVITE_CODES ?? "")
     .split(",")
     .map((code) => code.trim())

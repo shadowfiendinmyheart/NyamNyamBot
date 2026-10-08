@@ -22,7 +22,7 @@ export async function transcribeAudio(input: TranscribeAudioInput): Promise<stri
   const response = await getClient()
     .audio.transcriptions.create({
       file: await toFile(input.audioBuffer, input.filename, { type: input.mimeType }),
-      model: "whisper-1",
+      model: config.openaiTranscribeModel,
       language: "ru",
     })
     .catch((err: unknown) => {
