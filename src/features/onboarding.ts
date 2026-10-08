@@ -28,10 +28,12 @@ import {
 } from "../nutrition/calculations.js";
 import {
   buildVoiceConfirmMessage,
+  COPY_TRANSCRIPT_HINT,
   settleVoiceConfirmation,
   transcribeVoiceInConversation,
   voiceConfirmKeyboard,
   voiceConfirmPattern,
+  type VoiceConfirmAction,
 } from "./voiceConfirm.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -593,11 +595,10 @@ export async function askMotivation(
     }
     const voiceMatch = data?.match(voiceConfirmPattern("motivation"));
     if (voiceMatch) {
-      const text = await settleVoiceConfirmation(
-        response,
-        voiceMatch[1] === "yes",
-        `Не сохраняю. ${retryHint}`,
-      );
+      const text = await settleVoiceConfirmation(response, voiceMatch[1] as VoiceConfirmAction, {
+        reject: `Не сохраняю. ${retryHint}`,
+        edit: `Пришлите исправленный вариант текстом (${COPY_TRANSCRIPT_HINT}) или голосом.`,
+      });
       if (text !== undefined) return done(normalizeMotivation(text));
       continue;
     }

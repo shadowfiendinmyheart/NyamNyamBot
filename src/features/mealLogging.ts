@@ -34,9 +34,12 @@ import { shortLabel } from "../utils/text.js";
 import { smallTalkReply } from "./smallTalk.js";
 import { replyRecognizedWorkouts, saveRecognizedWorkouts } from "./workout.js";
 import {
-  buildVoiceTranscriptMessage,
+  buildVoiceConfirmMessage,
+  COPY_TRANSCRIPT_HINT,
   settleVoiceConfirmation,
+  voiceConfirmKeyboard,
   voiceConfirmPattern,
+  type VoiceConfirmAction,
 } from "./voiceConfirm.js";
 
 const MIME_BY_EXT: Record<string, ImageMimeType> = {
@@ -377,22 +380,23 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
     });
   });
 
-  // Голосовое с едой пишем сразу и показываем расшифровку: неточную запись можно
-  // исправить (✏️) или удалить (🗑) под ней.
+  // Голосовое с едой не уходит в ИИ сразу: показываем расшифровку с кнопками
+  // ✅ / ✏️ / ❌ и пишем в дневник только после ✅.
   bot.on("message:voice", async (ctx) => {
     try {
       await withChatAction(ctx, "typing", async () => {
         const text = await transcribeVoiceMessage(ctx);
         if (text === undefined) return;
-        await ctx.reply(buildVoiceTranscriptMessage(text));
 
-        // «Спасибо» голосом — как текстом: без запроса к ИИ.
+        // «Спасибо» голосом — как текстом: без кнопок и без запроса к ИИ.
         const smallTalk = smallTalkReply(text);
         if (smallTalk) {
           await ctx.reply(smallTalk);
           return;
         }
-        await logDescribedMeal(db, ctx, text, "voice");
+        await ctx.reply(buildVoiceConfirmMessage(text), {
+          reply_markup: voiceConfirmKeyboard("meal"),
+        });
       });
     } catch (err) {
       console.error("Не удалось обработать голосовое сообщение:", err);
@@ -400,15 +404,19 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
     }
   });
 
-  // Кнопки «Да/Нет» в сообщениях, отправленных до записи голосовой еды без подтверждения.
   bot.callbackQuery(voiceConfirmPattern("meal"), async (ctx) => {
-    const text = await settleVoiceConfirmation(
-      ctx,
-      ctx.match[1] === "yes",
-      "Не записываю. Запишите голосовое ещё раз или напишите текстом.",
-    );
+    const text = await settleVoiceConfirmation(ctx, ctx.match[1] as VoiceConfirmAction, {
+      reject: "Не записываю. Запишите голосовое ещё раз или напишите текстом.",
+      edit:
+        `Пришлите исправленный вариант текстом (${COPY_TRANSCRIPT_HINT}) ` +
+        "или запишите голосовое ещё раз.",
+    });
     if (text === undefined) return;
-    await withChatAction(ctx, "typing", () => logDescribedMeal(db, ctx, text, "voice"));
+    // Время записи — когда пришло голосовое (сообщение с расшифровкой отправлено сразу
+    // за ним), а не когда нажали ✅: «на ужин» в 23:50 не должно уехать на завтра.
+    const sentDate = ctx.callbackQuery.message?.date;
+    const sentAt = sentDate ? new Date(sentDate * 1000) : new Date();
+    await withChatAction(ctx, "typing", () => logDescribedMeal(db, ctx, text, "voice", sentAt));
   });
 
   // Альбом (несколько фото с одним media_group_id) — один приём пищи: части собираем

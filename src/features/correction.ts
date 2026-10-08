@@ -23,10 +23,12 @@ import {
 } from "./mealLogging.js";
 import {
   buildVoiceConfirmMessage,
+  COPY_TRANSCRIPT_HINT,
   settleVoiceConfirmation,
   transcribeVoiceInConversation,
   voiceConfirmKeyboard,
   voiceConfirmPattern,
+  type VoiceConfirmAction,
 } from "./voiceConfirm.js";
 import { withChatActionVia } from "../utils/chatAction.js";
 import { isCancelInput } from "./mainMenu.js";
@@ -142,10 +144,17 @@ export function correctionConversation(db: Db, api: Api) {
       // Чужие кнопки (удалить, обсудить…) диалог не трогает — их обработают как обычно.
       if (!match) await conversation.skip({ next: true });
 
+      // ✏️ и ❌ — ждём новое уточнение ниже, оно и заменит расшифровку.
       userText = await settleVoiceConfirmation(
         next,
-        match?.[1] === "yes",
-        "Не учитываю. Опишите уточнение ещё раз — текстом или голосом. /cancel — отменить.",
+        (match?.[1] ?? "no") as VoiceConfirmAction,
+        {
+          reject:
+            "Не учитываю. Опишите уточнение ещё раз — текстом или голосом. /cancel — отменить.",
+          edit:
+            `Пришлите исправленное уточнение текстом (${COPY_TRANSCRIPT_HINT}) ` +
+            "или голосом. /cancel — отменить.",
+        },
       );
       if (userText === undefined) {
         response = await conversation.waitFor(["message:text", "message:voice"], {
@@ -239,7 +248,7 @@ export function registerCorrection(bot: Bot<MyContext>, db: Db): void {
     await ctx.reply("Сейчас нечего отменять.");
   });
 
-  // Пока правка идёт, нажатия «Да/Нет» под голосовым уточнением перехватывает сам
+  // Пока правка идёт, нажатия ✅ / ✏️ / ❌ под голосовым уточнением перехватывает сам
   // диалог; сюда попадаем, только если правка уже закончилась (или бот перезапускался).
   bot.callbackQuery(voiceConfirmPattern("fix"), async (ctx) => {
     await ctx.answerCallbackQuery({
