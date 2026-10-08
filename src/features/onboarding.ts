@@ -28,12 +28,11 @@ import {
 } from "../nutrition/calculations.js";
 import {
   buildVoiceConfirmMessage,
-  COPY_TRANSCRIPT_HINT,
+  claimVoiceConfirmation,
   settleVoiceConfirmation,
   transcribeVoiceInConversation,
   voiceConfirmKeyboard,
   voiceConfirmPattern,
-  type VoiceConfirmAction,
 } from "./voiceConfirm.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -534,7 +533,8 @@ export type MotivationPlace =
 // Открытый вопрос «зачем вам бот» — ответ текстом или голосом (голос — только после
 // подтверждения расшифровки). Кнопка под вопросом оставляет current: «Пропустить», если
 // ответа ещё нет, и «Оставить как есть», если есть. Расшифровка хранится в тексте
-// сообщения с кнопками «Да/Нет», поэтому отдельного состояния для голоса не нужно.
+// сообщения с кнопками ✅ / ✏️ / ❌, поэтому отдельного состояния для голоса не нужно:
+// после ✏️ исправленный вариант просто приходит следующим сообщением.
 export async function askMotivation(
   conversation: MyConversation,
   ctx: Context,
@@ -580,6 +580,9 @@ export async function askMotivation(
   const retryHint = current
     ? "Расскажите ещё раз — текстом или голосом — или нажмите «Оставить как есть»."
     : "Расскажите ещё раз — текстом или голосом — или нажмите «Пропустить».";
+  const editHint = current
+    ? "Пришлите исправленный вариант текстом или голосом — или нажмите «Оставить как есть»."
+    : "Пришлите исправленный вариант текстом или голосом — или нажмите «Пропустить».";
 
   for (;;) {
     const response = await conversation.wait();
@@ -595,10 +598,13 @@ export async function askMotivation(
     }
     const voiceMatch = data?.match(voiceConfirmPattern("motivation"));
     if (voiceMatch) {
-      const text = await settleVoiceConfirmation(response, voiceMatch[1] as VoiceConfirmAction, {
-        reject: `Не сохраняю. ${retryHint}`,
-        edit: `Пришлите исправленный вариант текстом (${COPY_TRANSCRIPT_HINT}) или голосом.`,
-      });
+      const text = await settleVoiceConfirmation(
+        response,
+        voiceMatch[1],
+        { reject: `Не сохраняю. ${retryHint}`, edit: editHint },
+        (chatId, messageId) =>
+          conversation.external(() => claimVoiceConfirmation(chatId, messageId)),
+      );
       if (text !== undefined) return done(normalizeMotivation(text));
       continue;
     }

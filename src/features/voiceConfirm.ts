@@ -35,9 +35,11 @@ export const MAX_TRANSCRIPT_LENGTH =
   TELEGRAM_MAX_MESSAGE_LENGTH - PREFIX.length - SUFFIX.length - TRUNCATION_MARK.length;
 
 function truncateTranscript(transcript: string, maxLength = MAX_TRANSCRIPT_LENGTH): string {
-  return transcript.length > maxLength
-    ? `${transcript.slice(0, maxLength).trimEnd()}${TRUNCATION_MARK}`
-    : transcript;
+  if (transcript.length <= maxLength) return transcript;
+  let cut = transcript.slice(0, maxLength);
+  // Не разрываем суррогатную пару (эмодзи): одинокую половину Telegram не примет.
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return `${cut.trimEnd()}${TRUNCATION_MARK}`;
 }
 
 export function buildVoiceConfirmMessage(transcript: string): string {
@@ -63,25 +65,23 @@ export function voiceConfirmPattern(scope: VoiceConfirmScope): RegExp {
   return new RegExp(`^voice_${scope}:(yes|edit|no)$`);
 }
 
-// Что написать под расшифровкой после нажатия «❌» и «✏️» — своё в каждом флоу.
+// Что сказать после «❌» (под расшифровкой) и «✏️» (отдельным сообщением) — своё в
+// каждом флоу.
 export interface VoiceSettleHints {
   reject: string;
   edit: string;
 }
 
-// Часть подсказки к ✏️: моноширинную расшифровку Telegram копирует по нажатию.
-export const COPY_TRANSCRIPT_HINT = "нажмите на расшифровку — она скопируется";
-
-// Текст сообщения после нажатия: расшифровка без кнопок, при ❌ / ✏️ — с пояснением.
-// При ✏️ расшифровка моноширинная (entity code, без parse_mode — экранировать нечего),
-// чтобы её можно было скопировать целиком и поправить пару слов.
+// Текст сообщения после нажатия: расшифровка без кнопок, при ❌ — с пояснением. При ✏️
+// расшифровка моноширинная (entity code, без parse_mode — экранировать нечего), чтобы
+// её можно было скопировать целиком и поправить пару слов; подсказка к ✏️ идёт
+// отдельным сообщением, так копируемый текст не обрезается ради неё.
 export function buildSettledVoiceMessage(
   transcript: string,
   action: VoiceConfirmAction,
-  hints: VoiceSettleHints,
+  rejectHint: string,
 ): { text: string; entities: MessageEntity[] } {
-  const note =
-    action === "no" ? `\n\n❌ ${hints.reject}` : action === "edit" ? `\n\n✏️ ${hints.edit}` : "";
+  const note = action === "no" ? `\n\n❌ ${rejectHint}` : "";
   const shown = truncateTranscript(
     transcript,
     TELEGRAM_MAX_MESSAGE_LENGTH - SETTLED_PREFIX.length - note.length - TRUNCATION_MARK.length,
@@ -91,24 +91,55 @@ export function buildSettledVoiceMessage(
   return { text: `${SETTLED_PREFIX}${shown}${note}`, entities };
 }
 
-// Обрабатывает нажатие ✅ / ✏️ / ❌: отвечает на callback, убирает кнопки и оставляет в
-// сообщении расшифровку с пояснением из hints. Возвращает расшифровку, только если
-// пользователь подтвердил её (✅).
+export function buildVoiceEditHint(editHint: string): string {
+  return `✏️ ${editHint}\n\nЧтобы поправить пару слов, нажмите на расшифровку — она скопируется.`;
+}
+
+// Сообщения с расшифровкой, под которыми кнопку уже нажали. Защита от двух разных
+// кнопок подряд (✏️, затем ✅): у второго нажатия в callback — снимок исходного текста,
+// и правка сообщения проходит. В памяти, последние MAX_SETTLED; после перезапуска бота
+// повтор той же кнопки по-прежнему отсекает «message is not modified».
+const MAX_SETTLED = 1000;
+const settledMessages = new Set<string>();
+
+// true — сообщение ещё не обрабатывали (и теперь оно помечено). Внутри диалога
+// (@grammyjs/conversations) звать через conversation.external: код диалога
+// переигрывается на каждом обновлении.
+export function claimVoiceConfirmation(chatId: number, messageId: number): boolean {
+  const key = `${chatId}:${messageId}`;
+  if (settledMessages.has(key)) return false;
+  settledMessages.add(key);
+  if (settledMessages.size > MAX_SETTLED) {
+    settledMessages.delete(settledMessages.values().next().value!);
+  }
+  return true;
+}
+
+type ClaimVoiceConfirmation = (chatId: number, messageId: number) => boolean | Promise<boolean>;
+
+// Обрабатывает нажатие ✅ / ✏️ / ❌ (action — ctx.match[1] из voiceConfirmPattern):
+// отвечает на callback, убирает кнопки и оставляет в сообщении расшифровку, при ✏️
+// присылает подсказку. Возвращает расшифровку, только если пользователь подтвердил её.
 export async function settleVoiceConfirmation(
   ctx: Context,
-  action: VoiceConfirmAction,
+  action: string,
   hints: VoiceSettleHints,
+  claim: ClaimVoiceConfirmation = claimVoiceConfirmation,
 ): Promise<string | undefined> {
-  const text = parseVoiceConfirmMessage(ctx.callbackQuery?.message?.text);
-  if (!text) {
+  const settledAction: VoiceConfirmAction =
+    action === "yes" || action === "edit" ? action : "no";
+  const message = ctx.callbackQuery?.message;
+  const text = parseVoiceConfirmMessage(message?.text);
+  if (!message || !text) {
     await ctx.answerCallbackQuery({ text: "Не удалось прочитать расшифровку.", show_alert: true });
     return undefined;
   }
   await ctx.answerCallbackQuery();
+  if (!(await claim(message.chat.id, message.message_id))) return undefined;
 
-  // Кнопки убираем до долгого запроса к ИИ. Повторное нажатие (обновления чата идут
-  // по очереди) упадёт здесь с «message is not modified» — так ничего не задвоится.
-  const settled = buildSettledVoiceMessage(text, action, hints);
+  // Кнопки убираем до долгого запроса к ИИ. Повторное нажатие после перезапуска бота
+  // (обновления чата идут по очереди) упадёт здесь с «message is not modified».
+  const settled = buildSettledVoiceMessage(text, settledAction, hints.reject);
   try {
     await ctx.editMessageText(settled.text, {
       entities: settled.entities,
@@ -118,7 +149,8 @@ export async function settleVoiceConfirmation(
     return undefined;
   }
 
-  return action === "yes" ? text : undefined;
+  if (settledAction === "edit") await ctx.reply(buildVoiceEditHint(hints.edit));
+  return settledAction === "yes" ? text : undefined;
 }
 
 // Расшифровка голосового внутри диалога (@grammyjs/conversations): все внешние вызовы

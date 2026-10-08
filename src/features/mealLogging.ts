@@ -35,11 +35,9 @@ import { smallTalkReply } from "./smallTalk.js";
 import { replyRecognizedWorkouts, saveRecognizedWorkouts } from "./workout.js";
 import {
   buildVoiceConfirmMessage,
-  COPY_TRANSCRIPT_HINT,
   settleVoiceConfirmation,
   voiceConfirmKeyboard,
   voiceConfirmPattern,
-  type VoiceConfirmAction,
 } from "./voiceConfirm.js";
 
 const MIME_BY_EXT: Record<string, ImageMimeType> = {
@@ -394,8 +392,10 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
           await ctx.reply(smallTalk);
           return;
         }
+        // Ответом на голосовое: по reply_to_message.date при ✅ берём время записи.
         await ctx.reply(buildVoiceConfirmMessage(text), {
           reply_markup: voiceConfirmKeyboard("meal"),
+          reply_parameters: { message_id: ctx.message.message_id },
         });
       });
     } catch (err) {
@@ -405,16 +405,17 @@ export function registerMealLogging(bot: Bot<MyContext>, db: Db): void {
   });
 
   bot.callbackQuery(voiceConfirmPattern("meal"), async (ctx) => {
-    const text = await settleVoiceConfirmation(ctx, ctx.match[1] as VoiceConfirmAction, {
+    const text = await settleVoiceConfirmation(ctx, ctx.match[1], {
       reject: "Не записываю. Запишите голосовое ещё раз или напишите текстом.",
-      edit:
-        `Пришлите исправленный вариант текстом (${COPY_TRANSCRIPT_HINT}) ` +
-        "или запишите голосовое ещё раз.",
+      edit: "Пришлите исправленный вариант текстом — запишу его. Или запишите голосовое ещё раз.",
     });
     if (text === undefined) return;
-    // Время записи — когда пришло голосовое (сообщение с расшифровкой отправлено сразу
-    // за ним), а не когда нажали ✅: «на ужин» в 23:50 не должно уехать на завтра.
-    const sentDate = ctx.callbackQuery.message?.date;
+    // Время записи — когда отправили голосовое, а не когда нажали ✅ (и не когда
+    // закончилась расшифровка): «на ужин» в 23:59 не должно уехать на завтра.
+    const message = ctx.callbackQuery.message;
+    const voiceDate =
+      message && "reply_to_message" in message ? message.reply_to_message?.date : undefined;
+    const sentDate = voiceDate ?? message?.date;
     const sentAt = sentDate ? new Date(sentDate * 1000) : new Date();
     await withChatAction(ctx, "typing", () => logDescribedMeal(db, ctx, text, "voice", sentAt));
   });

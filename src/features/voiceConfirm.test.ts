@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildSettledVoiceMessage,
   buildVoiceConfirmMessage,
+  buildVoiceEditHint,
+  claimVoiceConfirmation,
   MAX_TRANSCRIPT_LENGTH,
   parseVoiceConfirmMessage,
   voiceConfirmKeyboard,
@@ -52,39 +54,68 @@ describe("features/voiceConfirm buttons", () => {
 });
 
 describe("features/voiceConfirm settled message", () => {
-  const hints = { reject: "Не записываю.", edit: "Пришлите исправленный вариант." };
+  const reject = "Не записываю.";
 
   it("leaves only the transcript after ✅", () => {
-    expect(buildSettledVoiceMessage("съела борщ", "yes", hints)).toEqual({
+    expect(buildSettledVoiceMessage("съела борщ", "yes", reject)).toEqual({
       text: "🎙 съела борщ",
       entities: [],
     });
   });
 
   it("adds the reject hint after ❌", () => {
-    expect(buildSettledVoiceMessage("съела борщ", "no", hints)).toEqual({
+    expect(buildSettledVoiceMessage("съела борщ", "no", reject)).toEqual({
       text: "🎙 съела борщ\n\n❌ Не записываю.",
       entities: [],
     });
   });
 
-  it("makes the transcript monospaced after ✏️ so it can be copied", () => {
-    const { text, entities } = buildSettledVoiceMessage("съела борщ", "edit", hints);
-    expect(text).toBe("🎙 съела борщ\n\n✏️ Пришлите исправленный вариант.");
+  it("makes the whole transcript monospaced after ✏️ so it can be copied", () => {
+    const { text, entities } = buildSettledVoiceMessage("съела борщ", "edit", reject);
+    expect(text).toBe("🎙 съела борщ");
     expect(entities).toHaveLength(1);
     const [entity] = entities;
     expect(entity.type).toBe("code");
     expect(text.slice(entity.offset, entity.offset + entity.length)).toBe("съела борщ");
   });
 
+  it("does not cut the transcript the user saw when ✏️ is pressed", () => {
+    const transcript = parseVoiceConfirmMessage(buildVoiceConfirmMessage("а".repeat(10_000)))!;
+    expect(buildSettledVoiceMessage(transcript, "edit", reject).text).toBe(`🎙 ${transcript}`);
+  });
+
   it("fits Telegram's limit with a long transcript", () => {
     const transcript = parseVoiceConfirmMessage(buildVoiceConfirmMessage("а".repeat(10_000)))!;
     for (const action of ["yes", "edit", "no"] as const) {
-      const { text, entities } = buildSettledVoiceMessage(transcript, action, hints);
+      const { text, entities } = buildSettledVoiceMessage(transcript, action, reject);
       expect(text.length).toBeLessThanOrEqual(4096);
       for (const entity of entities) {
         expect(entity.offset + entity.length).toBeLessThanOrEqual(text.length);
       }
     }
+  });
+
+  it("does not split an emoji when cutting a long transcript", () => {
+    const transcript = `${"а".repeat(MAX_TRANSCRIPT_LENGTH - 1)}🍎${"а".repeat(100)}`;
+    const message = buildVoiceConfirmMessage(transcript);
+    expect(message).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    expect(parseVoiceConfirmMessage(message)).toBe(`${"а".repeat(MAX_TRANSCRIPT_LENGTH - 1)}…`);
+  });
+});
+
+describe("features/voiceConfirm claim", () => {
+  it("lets only the first button under a message through", () => {
+    expect(claimVoiceConfirmation(1, 100)).toBe(true);
+    expect(claimVoiceConfirmation(1, 100)).toBe(false);
+    expect(claimVoiceConfirmation(1, 101)).toBe(true);
+    expect(claimVoiceConfirmation(2, 100)).toBe(true);
+  });
+});
+
+describe("features/voiceConfirm edit hint", () => {
+  it("tells how to copy the transcript", () => {
+    expect(buildVoiceEditHint("Пришлите исправленный вариант.")).toMatch(
+      /^✏️ Пришлите исправленный вариант\.\n\n.*скопируется/,
+    );
   });
 });

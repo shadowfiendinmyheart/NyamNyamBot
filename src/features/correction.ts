@@ -23,12 +23,11 @@ import {
 } from "./mealLogging.js";
 import {
   buildVoiceConfirmMessage,
-  COPY_TRANSCRIPT_HINT,
+  claimVoiceConfirmation,
   settleVoiceConfirmation,
   transcribeVoiceInConversation,
   voiceConfirmKeyboard,
   voiceConfirmPattern,
-  type VoiceConfirmAction,
 } from "./voiceConfirm.js";
 import { withChatActionVia } from "../utils/chatAction.js";
 import { isCancelInput } from "./mainMenu.js";
@@ -142,19 +141,19 @@ export function correctionConversation(db: Db, api: Api) {
 
       const match = next.callbackQuery?.data?.match(voiceConfirmPattern("fix"));
       // Чужие кнопки (удалить, обсудить…) диалог не трогает — их обработают как обычно.
-      if (!match) await conversation.skip({ next: true });
+      if (!match) return conversation.skip({ next: true });
 
       // ✏️ и ❌ — ждём новое уточнение ниже, оно и заменит расшифровку.
       userText = await settleVoiceConfirmation(
         next,
-        (match?.[1] ?? "no") as VoiceConfirmAction,
+        match[1],
         {
           reject:
             "Не учитываю. Опишите уточнение ещё раз — текстом или голосом. /cancel — отменить.",
-          edit:
-            `Пришлите исправленное уточнение текстом (${COPY_TRANSCRIPT_HINT}) ` +
-            "или голосом. /cancel — отменить.",
+          edit: "Пришлите исправленное уточнение текстом или голосом. /cancel — отменить.",
         },
+        (chatId, messageId) =>
+          conversation.external(() => claimVoiceConfirmation(chatId, messageId)),
       );
       if (userText === undefined) {
         response = await conversation.waitFor(["message:text", "message:voice"], {

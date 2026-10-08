@@ -9,11 +9,9 @@ import { COACH_BUTTON, COACH_EXIT_BUTTON, mainKeyboard } from "../mainMenu.js";
 import { logDescribedMeal, transcribeVoiceMessage } from "../mealLogging.js";
 import {
   buildVoiceConfirmMessage,
-  COPY_TRANSCRIPT_HINT,
   settleVoiceConfirmation,
   voiceConfirmKeyboard,
   voiceConfirmPattern,
-  type VoiceConfirmAction,
 } from "../voiceConfirm.js";
 import { createCoachDataSource } from "./dataSource.js";
 import { DiaryOfferStore } from "./diaryOffers.js";
@@ -203,11 +201,9 @@ export function registerCoach(
   });
 
   bot.callbackQuery(voiceConfirmPattern("coach"), async (ctx) => {
-    const text = await settleVoiceConfirmation(ctx, ctx.match[1] as VoiceConfirmAction, {
+    const text = await settleVoiceConfirmation(ctx, ctx.match[1], {
       reject: "Не отправляю. Задайте вопрос ещё раз голосом или текстом.",
-      edit:
-        `Пришлите исправленный вопрос текстом (${COPY_TRANSCRIPT_HINT}) ` +
-        "или задайте его голосом ещё раз.",
+      edit: "Пришлите исправленный вопрос текстом или задайте его голосом ещё раз.",
     });
     if (text === undefined) return;
 
