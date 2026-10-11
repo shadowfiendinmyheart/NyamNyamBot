@@ -16,11 +16,11 @@ export const config = {
   // (например, локальный порт VPN-клиента). Пусто — все запросы идут напрямую.
   proxyUrl: process.env.PROXY_URL || undefined,
   // Если задан ANTHROPIC_BASE_URL (сторонний Anthropic-совместимый прокси), ключ
-  // берётся из CUSTOMIX_API_KEY, а не из ANTHROPIC_API_KEY — это разные ключи от
-  // разных сервисов, и переключение прокси не должно затирать прямой ключ Anthropic.
+  // берётся из ANTHROPIC_PROXY_API_KEY, а не из ANTHROPIC_API_KEY — это разные ключи
+  // от разных сервисов, и переключение прокси не должно затирать прямой ключ Anthropic.
   get anthropicApiKey(): string {
     return process.env.ANTHROPIC_BASE_URL
-      ? required("CUSTOMIX_API_KEY")
+      ? required("ANTHROPIC_PROXY_API_KEY")
       : required("ANTHROPIC_API_KEY");
   },
   // Пусто/не задано — используется официальный endpoint Anthropic по умолчанию из SDK.

@@ -80,7 +80,13 @@ describe("cron/scheduler minutesSince", () => {
 describe("cron/scheduler runScheduledTasks", () => {
   let db: ReturnType<typeof makeDb>;
   const comment = vi.fn();
-  const saved = { ...config };
+  // Только нужные поля: spread всего config дёрнул бы геттеры ключей и упал без .env.
+  const saved = {
+    eveningSummaryTime: config.eveningSummaryTime,
+    weeklyReportTime: config.weeklyReportTime,
+    weightReminderTime: config.weightReminderTime,
+    mealRemindersEnabled: config.mealRemindersEnabled,
+  };
 
   beforeEach(() => {
     db = makeDb();
