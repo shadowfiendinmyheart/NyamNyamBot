@@ -5,8 +5,11 @@ import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
 import {
   commentOnPeriod,
+  type CoachDataSource,
   type CommentOnPeriod,
+  type DaySummary,
   type PeriodComment,
+  type PeriodDay,
   type PeriodKind,
 } from "../ai/coach.js";
 import { getMealsForUserOnDate } from "../db/meals.js";
@@ -31,6 +34,7 @@ import {
   getZonedYmd,
   weekdayOf,
 } from "../utils/dates.js";
+import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../utils/telegram.js";
 import { isValidTimeZone } from "../utils/timezones.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -92,6 +96,11 @@ function usersDueAt(
   });
 }
 
+// День отчёта с составом каждого приёма пищи — для оценки рациона.
+function withMealItems(dataSource: CoachDataSource, day: DaySummary): PeriodDay {
+  return { ...day, meals: dataSource.getMealItems(day.date).meals };
+}
+
 // Оценка рациона от Ням-Ням под отчётом. Если ИИ недоступен — отчёт уходит без неё.
 async function withCoachComment(
   report: string,
@@ -99,7 +108,9 @@ async function withCoachComment(
   userId: number,
 ): Promise<string> {
   try {
-    return `${report}\n\n${formatPeriodComment(await makeComment())}`;
+    const text = `${report}\n\n${formatPeriodComment(await makeComment())}`;
+    // Длинный день вместе с оценкой не влезет в одно сообщение — сам отчёт важнее.
+    return text.length <= TELEGRAM_MAX_MESSAGE_LENGTH ? text : report;
   } catch (err) {
     console.error(`Не удалось получить комментарий коуча для пользователя ${userId}:`, err);
     return report;
@@ -152,8 +163,7 @@ export async function sendEveningSummaries(
         return comment({
           kind: "day",
           snapshot,
-          summaries: [snapshot.today],
-          mealItems: [dataSource.getMealItems(snapshot.today.date)],
+          days: [withMealItems(dataSource, snapshot.today)],
         });
       },
       userId,
@@ -189,8 +199,7 @@ export async function sendWeeklyReports(
         comment({
           kind: "week",
           snapshot: dataSource.getSnapshot(),
-          summaries: days,
-          mealItems: days.map((day) => dataSource.getMealItems(day.date)),
+          days: days.map((day) => withMealItems(dataSource, day)),
         }),
       userId,
     );

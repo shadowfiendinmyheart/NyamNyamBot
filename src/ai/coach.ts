@@ -123,13 +123,16 @@ export interface AskCoachInput {
 
 export type PeriodKind = "day" | "week";
 
+// День отчёта с составом каждого приёма пищи: оценка смотрит, что именно съедено, а у
+// текстовых записей description — это сырой текст пользователя.
+export interface PeriodDay extends DaySummary {
+  meals: DayMealItems["meals"];
+}
+
 export interface CommentOnPeriodInput {
   kind: PeriodKind;
   snapshot: CoachSnapshot;
-  summaries: DaySummary[];
-  // Состав приёмов пищи по дням периода: оценка смотрит, что именно съедено, а у
-  // текстовых записей description — это сырой текст пользователя.
-  mealItems: DayMealItems[];
+  days: PeriodDay[];
 }
 
 // Светофор качества рациона: green — разнообразно и сбалансированно, yellow — есть

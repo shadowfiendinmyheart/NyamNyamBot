@@ -375,8 +375,8 @@ cron-отчёты/напоминания, Docker-деплой) — отдель�
 (клетчатка, сахар) нет, миграция не нужна.
 - [x] Контракт (`ai/coach.ts`): `CommentOnPeriod` возвращает не строку, а
       `PeriodComment { verdict: "green" | "yellow" | "red" | null; summary; advice | null }`
-      (`verdict = null` — записей мало для оценки); во входе — `mealItems: DayMealItems[]`,
-      состав приёмов пищи с граммами по дням периода (сейчас комментарий видит только
+      (`verdict = null` — записей мало для оценки); во входе — `days: PeriodDay[]`: дни
+      отчёта, у каждого приёма пищи — состав с граммами (раньше комментарий видел только
       `description`, а у текстовых записей это сырой текст пользователя).
 - [x] Промпт (`claude/coachPrompts.ts`): общая константа `DIET_QUALITY_CRITERIA` —
       овощи/фрукты, источник белка в приёмах пищи, цельные продукты против
@@ -391,20 +391,23 @@ cron-отчёты/напоминания, Docker-деплой) — отдель�
 - [x] Реализация (`claude/coach.ts`): `commentOnPeriod` — строго через tool use
       (`assess_diet`, `tool_choice` на него, как в `analyzeFood.ts`); неизвестный
       verdict → `null`, пустой summary → `CoachError`, длинные строки —
-      `trimToLastSentence` (лимит 400 символов); `COMMENT_MAX_TOKENS` 600, нет
-      tool_use или обрыв по `max_tokens` → `CoachError` (retryable).
-      `buildCommentRequest` подставляет в дни отчёта состав приёмов пищи вместо описаний.
+      `trimToLastSentence` (300 символов summary, 240 — advice), эмодзи модели в начале
+      убираются (светофор, 🐱 и 💡 ставит бот); `COMMENT_MAX_TOKENS` 600, нет tool_use
+      или обрыв по `max_tokens` → `CoachError`. `buildCommentRequest` шлёт снимок без
+      `today` — сегодняшний день уже есть среди дней отчёта, с составом.
 - [x] Отображение (`features/reports.ts`): `formatPeriodComment` —
       «🟢 Ням-Ням: …» + «💡 …»; без verdict — «🐱 Ням-Ням: …», без advice — без строки 💡.
 - [x] Планировщик (`cron/scheduler.ts`): `withCoachComment` форматирует через
-      `formatPeriodComment` (ошибка ИИ — отчёт без блока, как сейчас); вечерняя сводка
-      передаёт `getMealItems` за сегодня, недельный отчёт — за каждый из 7 дней.
+      `formatPeriodComment` (ошибка ИИ или отчёт с оценкой длиннее 4096 символов —
+      отчёт без блока); состав дней — `withMealItems` через `getMealItems`: сегодня для
+      сводки, каждый из 7 дней для недельного отчёта.
 - [x] `HELP_TEXT` — строка про вечерние итоги: оцениваю не только калории, но и что вы
       ели; `CLAUDE.md` — упоминание оценки рациона в описании коуча и `reports.ts`.
 - [x] Тесты: `coach.test.ts` (tool_use → `PeriodComment`, неизвестный verdict, пустой
-      summary, состав в запросе), `reports.test.ts` (`formatPeriodComment`),
-      `scheduler.test.ts` (светофор и 💡 в сводке, продукты в `mealItems`, 7 дней в
-      недельном, без блока при ошибке ИИ).
+      summary, состав в запросе без дубля `today`, обрезка, эмодзи в начале),
+      `reports.test.ts` (`formatPeriodComment`), `scheduler.test.ts` (светофор и 💡 в
+      сводке, продукты в `days`, 7 дней в недельном, без блока при ошибке ИИ и при
+      переполнении сообщения).
 - **Готово, когда:** в «🌙 Итогах дня» после дня «овсянка с бананом / пицца и кола /
   гречка с курицей и салат» есть строка со светофором про состав и строка 💡 с советом
   с учётом цели из профиля; в недельном отчёте — то же за неделю; при почти пустом дне —

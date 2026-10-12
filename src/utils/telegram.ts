@@ -2,6 +2,9 @@ import { GrammyError, type ApiClientOptions } from "grammy";
 import { config } from "../config.js";
 import { proxyDispatcher, proxyHttpAgent } from "./proxy.js";
 
+// Telegram не принимает сообщения длиннее 4096 символов.
+export const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
+
 export const telegramClientOptions: ApiClientOptions | undefined = proxyHttpAgent
   ? { baseFetchConfig: { agent: proxyHttpAgent, compress: true } }
   : undefined;

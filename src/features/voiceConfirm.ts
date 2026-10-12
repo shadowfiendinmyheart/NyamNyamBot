@@ -3,7 +3,7 @@ import { InlineKeyboard, type Api, type Context } from "grammy";
 import type { MessageEntity } from "grammy/types";
 import type { MyContext } from "../context.js";
 import { transcribeAudio, TranscriberError } from "../ai/transcriber.js";
-import { downloadTelegramFile } from "../utils/telegram.js";
+import { downloadTelegramFile, TELEGRAM_MAX_MESSAGE_LENGTH } from "../utils/telegram.js";
 
 // Флоу для голосового ввода: голосовое → расшифровка → сообщение с текстом и кнопками
 // «✅ / ✏️ Исправить / ❌» → только после ✅ расшифровка идёт дальше (в запись еды,
@@ -27,9 +27,8 @@ const SUFFIX = "\n\nВсё верно?";
 // После нажатия в сообщении остаётся расшифровка с этим префиксом (и пояснением ниже).
 const SETTLED_PREFIX = "🎙 ";
 
-// Telegram не принимает сообщения длиннее 4096 символов. Голосовое на несколько минут
-// даёт расшифровку длиннее — её обрезаем, и дальше идёт ровно то, что видит пользователь.
-const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
+// Голосовое на несколько минут даёт расшифровку длиннее лимита сообщения Telegram — её
+// обрезаем, и дальше идёт ровно то, что видит пользователь.
 const TRUNCATION_MARK = "…";
 export const MAX_TRANSCRIPT_LENGTH =
   TELEGRAM_MAX_MESSAGE_LENGTH - PREFIX.length - SUFFIX.length - TRUNCATION_MARK.length;

@@ -244,13 +244,12 @@ describe("cron/scheduler sendEveningSummaries", () => {
     expect(comment).toHaveBeenCalledTimes(1);
     const input = comment.mock.calls[0][0];
     expect(input.kind).toBe("day");
-    expect(input.summaries).toHaveLength(1);
-    expect(input.summaries[0].date).toBe("2026-08-23");
-    expect(input.summaries[0].totals.kcal).toBe(220);
-    expect(input.mealItems).toHaveLength(1);
-    expect(input.mealItems[0].date).toBe("2026-08-23");
-    expect(input.mealItems[0].meals).toHaveLength(1);
-    expect(input.mealItems[0].meals[0].items).toEqual([
+    expect(input.days).toHaveLength(1);
+    expect(input.days[0].date).toBe("2026-08-23");
+    expect(input.days[0].totals.kcal).toBe(220);
+    expect(input.days[0].meals).toHaveLength(1);
+    expect(input.days[0].meals[0].description).toBe("гречка");
+    expect(input.days[0].meals[0].items).toEqual([
       { name: "гречка", weightG: 200, kcal: 220, proteinG: 6.5, fatG: 2.1, carbG: 41.3 },
     ]);
     expect(sendMessage.mock.calls[0][1]).toContain(
@@ -276,7 +275,7 @@ describe("cron/scheduler sendEveningSummaries", () => {
 
     expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([2]);
     expect(sendMessage.mock.calls[0][1]).toContain("Сожжено на тренировках: 523 ккал");
-    expect(comment.mock.calls[0][0].summaries[0].burnedKcal).toBe(523);
+    expect(comment.mock.calls[0][0].days[0].burnedKcal).toBe(523);
   });
 
   it("при ошибке ИИ отправляет сводку без комментария", async () => {
@@ -332,7 +331,7 @@ describe("cron/scheduler sendWeeklyReports", () => {
 
     const input = comment.mock.calls[0][0];
     expect(input.kind).toBe("week");
-    expect(input.summaries.map((d: { date: string }) => d.date)).toEqual([
+    expect(input.days.map((d: { date: string }) => d.date)).toEqual([
       "2026-08-17",
       "2026-08-18",
       "2026-08-19",
@@ -342,11 +341,20 @@ describe("cron/scheduler sendWeeklyReports", () => {
       "2026-08-23",
     ]);
     // Состав — за каждый день недели, в том числе пустые.
-    expect(input.mealItems.map((d: { date: string }) => d.date)).toEqual(
-      input.summaries.map((d: { date: string }) => d.date),
-    );
-    const mealCounts = input.mealItems.map((d: { meals: unknown[] }) => d.meals.length);
+    const mealCounts = input.days.map((d: { meals: unknown[] }) => d.meals.length);
     expect(mealCounts).toEqual([1, 0, 0, 1, 0, 0, 0]);
-    expect(input.mealItems[3].meals[0].items[0].name).toBe("гречка");
+    expect(input.days[3].meals[0].items[0].name).toBe("гречка");
+  });
+
+  it("если оценка не влезает в сообщение Telegram, отчёт уходит без неё", async () => {
+    addMeal(db, 1, new Date("2026-08-17T09:00:00Z"));
+    comment.mockResolvedValue({ verdict: "green", summary: "Мур. ".repeat(900), advice: null });
+    const sendMessage = vi.fn().mockResolvedValue({});
+
+    await sendWeeklyReports({ sendMessage } as never, db, now, msk(1), comment);
+
+    const text: string = sendMessage.mock.calls[0][1];
+    expect(text).toContain("📊 Неделя 17.08–23.08");
+    expect(text).not.toContain("Ням-Ням");
   });
 });

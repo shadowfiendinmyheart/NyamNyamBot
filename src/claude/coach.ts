@@ -29,7 +29,8 @@ const CHAT_MAX_TOKENS = 700;
 const COMMENT_MAX_TOKENS = 600;
 const MAX_REPLY_CHARS = 4000;
 // Страховка, если модель не уложилась в лимиты из промпта (200 и 160 символов).
-const MAX_COMMENT_PART_CHARS = 400;
+const MAX_SUMMARY_CHARS = 300;
+const MAX_ADVICE_CHARS = 240;
 const MAX_TOOL_ROUNDS = 5;
 
 export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
@@ -104,22 +105,23 @@ interface AssessDietToolInput {
 }
 
 function toPeriodComment(raw: AssessDietToolInput): PeriodComment {
-  const summary = commentPart(raw.summary);
+  const summary = commentPart(raw.summary, MAX_SUMMARY_CHARS);
   if (!summary) throw assessmentError();
   return {
     verdict: DIET_VERDICTS.find((verdict) => verdict === raw.verdict) ?? null,
     summary,
-    advice: commentPart(raw.advice) || null,
+    advice: commentPart(raw.advice, MAX_ADVICE_CHARS) || null,
   };
 }
 
+// Светофор, 🐱 и 💡 перед текстом ставит бот — свой эмодзи модели в начале их задвоил бы.
+const LEADING_EMOJI = /^[\p{Extended_Pictographic}️‍\s]+/u;
+
 // Короткий текст — как есть: trimToLastSentence без превышения длины «дорезал» бы
 // фразу без точки в конце как оборванную.
-function commentPart(value: unknown): string {
-  const text = typeof value === "string" ? value.trim() : "";
-  return text.length > MAX_COMMENT_PART_CHARS
-    ? trimToLastSentence(text, MAX_COMMENT_PART_CHARS)
-    : text;
+function commentPart(value: unknown, maxLength: number): string {
+  const text = typeof value === "string" ? value.replace(LEADING_EMOJI, "").trim() : "";
+  return text.length > maxLength ? trimToLastSentence(text, maxLength) : text;
 }
 
 function assessmentError(): CoachError {

@@ -273,28 +273,19 @@ describe("claude/coach commentOnPeriod", () => {
     proteinG: 31,
     fatG: 12,
     carbG: 44,
-  };
-  const day = {
-    ...snapshot.today,
-    totals: { kcal: 450, proteinG: 31, fatG: 12, carbG: 44 },
-    meals: [meal],
+    items: [
+      { name: "гречка", weightG: 200, kcal: 220, proteinG: 8, fatG: 2, carbG: 42 },
+      { name: "котлета куриная", weightG: 120, kcal: 230, proteinG: 23, fatG: 10, carbG: 2 },
+    ],
   };
   const dayInput = {
     kind: "day" as const,
     snapshot,
-    summaries: [day],
-    mealItems: [
+    days: [
       {
-        date: "2026-08-23",
-        meals: [
-          {
-            ...meal,
-            items: [
-              { name: "гречка", weightG: 200, kcal: 220, proteinG: 8, fatG: 2, carbG: 42 },
-              { name: "котлета куриная", weightG: 120, kcal: 230, proteinG: 23, fatG: 10, carbG: 2 },
-            ],
-          },
-        ],
+        ...snapshot.today,
+        totals: { kcal: 450, proteinG: 31, fatG: 12, carbG: 44 },
+        meals: [meal],
       },
     ],
   };
@@ -330,6 +321,10 @@ describe("claude/coach commentOnPeriod", () => {
     // Состав приёма пищи — вместо одного описания.
     expect(content).toContain('"name":"котлета куриная"');
     expect(content).toContain('"weightG":200');
+    // Сегодняшний день — только среди дней отчёта, без второй копии в снимке.
+    expect(content).toContain('"timeZone":"Europe/Moscow"');
+    expect(content).not.toContain('"today"');
+    expect(content.match(/"date":"2026-08-23"/g)).toHaveLength(1);
   });
 
   it("недельная оценка просит оценить неделю", async () => {
@@ -361,13 +356,32 @@ describe("claude/coach commentOnPeriod", () => {
   });
 
   it("слишком длинный текст обрезается по границе предложения", async () => {
-    const summary = `${"Первое предложение про обед. ".repeat(20)}Хвост`;
-    createMock.mockResolvedValue(assessResponse({ verdict: "green", summary }));
+    const text = `${"Первое предложение про обед. ".repeat(20)}Хвост`;
+    createMock.mockResolvedValue(
+      assessResponse({ verdict: "green", summary: text, advice: text }),
+    );
 
     const comment = await commentOnPeriod(dayInput);
 
-    expect(comment.summary.length).toBeLessThanOrEqual(400);
+    expect(comment.summary.length).toBeLessThanOrEqual(300);
     expect(comment.summary.endsWith("Первое предложение про обед.")).toBe(true);
+    expect(comment.advice!.length).toBeLessThanOrEqual(240);
+    expect(comment.advice!.endsWith("Первое предложение про обед.")).toBe(true);
+  });
+
+  it("убирает эмодзи модели в начале — светофор, 🐱 и 💡 ставит бот", async () => {
+    createMock.mockResolvedValue(
+      assessResponse({
+        summary: "🐱 Пока мало записей 🐾",
+        advice: "💡 Запишите ужин",
+      }),
+    );
+
+    expect(await commentOnPeriod(dayInput)).toEqual({
+      verdict: null,
+      summary: "Пока мало записей 🐾",
+      advice: "Запишите ужин",
+    });
   });
 
   it("пустая или оборванная оценка — ошибка, чтобы отчёт ушёл без неё", async () => {
