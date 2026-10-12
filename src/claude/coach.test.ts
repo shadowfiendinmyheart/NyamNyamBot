@@ -185,6 +185,114 @@ describe("claude/coach askCoach", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
+  const mealEntry = "🌙 Ужин\n\n• пельмени — 100 г: 250 ккал (Б 10 / Ж 12.5 / У 25)";
+  const correctedItem = {
+    name: "пельмени",
+    estimated_weight_g: 200,
+    kcal: 500.4,
+    protein_g: 20.04,
+    fat_g: 25,
+    carb_g: 50,
+  };
+
+  it("разговор о записи: правка и ответ приходят одним запросом", async () => {
+    createMock.mockResolvedValueOnce({
+      content: [
+        { type: "text", text: "Поправила: 200 г — это 500 ккал." },
+        { type: "tool_use", id: "toolu_1", name: "correct_meal", input: { items: [correctedItem] } },
+      ],
+      stop_reason: "tool_use",
+    });
+
+    const reply = await askCoach({
+      history: [],
+      question: "Было 200 г",
+      meal: { entry: mealEntry },
+      dataSource: makeDataSource(),
+    });
+
+    expect(reply).toEqual({
+      text: "Поправила: 200 г — это 500 ккал.",
+      offerDiaryEntry: false,
+      mealCorrection: [
+        { name: "пельмени", estimatedWeightG: 200, kcal: 500, proteinG: 20, fatG: 25, carbG: 50 },
+      ],
+    });
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const call = createMock.mock.calls[0][0];
+    expect(call.max_tokens).toBe(1500);
+    expect(call.system).toContain(mealEntry);
+    expect(call.system).toContain("ПОЛНЫМ новым составом");
+    expect(call.tools.map((t: { name: string }) => t.name)).toContain("correct_meal");
+  });
+
+  it("вопрос о записи без правки — ответ без нового состава", async () => {
+    createMock.mockResolvedValueOnce(textResponse("Для ужина — в самый раз."));
+
+    const reply = await askCoach({
+      history: [],
+      question: "Это много?",
+      meal: { entry: mealEntry },
+      dataSource: makeDataSource(),
+    });
+
+    expect(reply).toEqual({ text: "Для ужина — в самый раз.", offerDiaryEntry: false });
+    expect(reply.mealCorrection).toBeUndefined();
+  });
+
+  it("без записи (и для удалённой записи) инструмента правки нет", async () => {
+    createMock.mockResolvedValue(textResponse("Мур!"));
+
+    await askCoach({ history: [], question: "?", dataSource: makeDataSource() });
+    await askCoach({ history: [], question: "?", meal: { entry: null }, dataSource: makeDataSource() });
+
+    for (const [call] of createMock.mock.calls) {
+      expect(call.tools.map((t: { name: string }) => t.name)).not.toContain("correct_meal");
+      expect(call.max_tokens).toBe(700);
+    }
+    expect(createMock.mock.calls[1][0].system).toContain("её уже удалили");
+  });
+
+  it("пустой состав — ошибка инструмента модели, а не правка", async () => {
+    createMock
+      .mockResolvedValueOnce({
+        content: [
+          { type: "text", text: "Поправила." },
+          { type: "tool_use", id: "toolu_1", name: "correct_meal", input: { items: [] } },
+        ],
+        stop_reason: "tool_use",
+      })
+      .mockResolvedValueOnce(textResponse("Удалить запись можно кнопкой «🗑 Удалить»."));
+
+    const reply = await askCoach({
+      history: [],
+      question: "Я это не ел",
+      meal: { entry: mealEntry },
+      dataSource: makeDataSource(),
+    });
+
+    expect(reply.mealCorrection).toBeUndefined();
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls[1][0].messages[2].content[0]).toMatchObject({
+      tool_use_id: "toolu_1",
+      is_error: true,
+    });
+  });
+
+  it("оборванный по max_tokens вызов correct_meal — CoachError, запись не правится", async () => {
+    createMock.mockResolvedValueOnce({
+      content: [
+        { type: "text", text: "Поправила." },
+        { type: "tool_use", id: "toolu_1", name: "correct_meal", input: { items: [correctedItem] } },
+      ],
+      stop_reason: "max_tokens",
+    });
+
+    await expect(
+      askCoach({ history: [], question: "Было 200 г", meal: { entry: mealEntry }, dataSource: makeDataSource() }),
+    ).rejects.toMatchObject({ name: "CoachError", retryable: true });
+  });
+
   it("бросает CoachError, если модель зациклилась на инструментах", async () => {
     createMock.mockResolvedValue(toolResponse("get_weight_history", { limit: 5 }));
 

@@ -5,22 +5,9 @@ import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
 import type { MyContext } from "../context.js";
 import { analyzeFood, type AnalyzeFoodResult, type FoodImage } from "../ai/foodAnalyzer.js";
-import {
-  getMealById,
-  getMealItemsForMeals,
-  mealPhotoFileIds,
-  updateMeal,
-  type MealRow,
-} from "../db/meals.js";
-import { getUserTimeZone } from "../db/users.js";
-import {
-  buildMealMessage,
-  buildStoredMealMessage,
-  downloadPhoto,
-  mealActionsKeyboard,
-  toFoodItems,
-  toMealItemInputs,
-} from "./mealLogging.js";
+import { getMealById, getMealItemsForMeals, mealPhotoFileIds, type MealRow } from "../db/meals.js";
+import { downloadPhoto, toFoodItems } from "./mealLogging.js";
+import { applyMealCorrection, correctionUndos, publishMealCorrection } from "./mealCorrection.js";
 import {
   buildVoiceConfirmMessage,
   claimVoiceConfirmation,
@@ -204,39 +191,19 @@ export function correctionConversation(db: Db, api: Api) {
       return;
     }
 
-    const updated = await conversation.external(() =>
-      updateMeal(db, mealId, userId, {
-        items: toMealItemInputs(result.items),
-        rawClaudeResponse: result,
+    const applied = await conversation.external(() =>
+      applyMealCorrection(db, correctionUndos, {
+        userId,
+        mealId,
+        result,
+        sourceMessageId: messageId,
       }),
     );
-    if (!updated) {
+    if (!applied) {
       await ctx.reply("Не получилось обновить запись — возможно, она была удалена.");
       return;
     }
-
-    // Из БД, а не из meal: тип и день могли поменять кнопкой «🕐 Время», пока шла правка.
-    const messageText = await conversation.external(() => {
-      const fresh = getMealById(db, mealId, userId);
-      return fresh
-        ? buildStoredMealMessage(db, fresh, getUserTimeZone(db, userId))
-        : buildMealMessage(meal.mealType, result.items, result.notes);
-    });
-    await conversation.external(async () => {
-      try {
-        await api.editMessageText(chatId, messageId, messageText, {
-          reply_markup: mealActionsKeyboard(mealId),
-        });
-      } catch (err) {
-        console.error("Не удалось обновить исходное сообщение:", err);
-      }
-    });
-
-    // Исходное сообщение может быть далеко вверху чата — присылаем обновлённую запись
-    // отдельным сообщением с теми же кнопками, чтобы результат был виден сразу.
-    await ctx.reply(`✅ Обновила запись:\n\n${messageText}`, {
-      reply_markup: mealActionsKeyboard(mealId),
-    });
+    await conversation.external(() => publishMealCorrection(api, chatId, applied, messageId));
   };
 }
 
@@ -251,7 +218,7 @@ export function registerCorrection(bot: Bot<MyContext>, db: Db): void {
   // диалог; сюда попадаем, только если правка уже закончилась (или бот перезапускался).
   bot.callbackQuery(voiceConfirmPattern("fix"), async (ctx) => {
     await ctx.answerCallbackQuery({
-      text: "Это уточнение уже неактуально — нажмите «✏️ Изменить» под записью ещё раз.",
+      text: "Это уточнение уже неактуально — нажмите «💬 Поправить или спросить» под записью.",
       show_alert: true,
     });
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() }).catch(() => {});

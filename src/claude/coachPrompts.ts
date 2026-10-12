@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { CoachSnapshot, CommentOnPeriodInput, DietVerdict } from "../ai/coach.js";
 import { MAX_SUMMARY_DAYS } from "../ai/coachLimits.js";
+import { FOOD_ANALYSIS_TOOL, FOOD_ESTIMATION_RULES } from "./prompts.js";
 
 const PERSONA = `Ты — Ням-Ням, кошечка-маскот Telegram-бота для подсчёта калорий и личный коуч
 пользователя. Ты совмещаешь четыре роли и сама выбираешь нужную по вопросу:
@@ -189,7 +190,57 @@ export function buildCommentRequest(input: CommentOnPeriodInput): string {
   ].join("\n");
 }
 
+// Разговор о записи еды (кнопка «💬 Поправить или спросить» под ней): коуч видит её
+// состав и может вернуть исправленный через correct_meal. entry = null — запись удалили.
+export function buildMealBlock(entry: string | null): string {
+  if (entry === null) {
+    return (
+      "Разговор начат с записи еды из дневника, но её уже удалили — поправить её нельзя. " +
+      "Если пользователь просит правку, скажи об этом."
+    );
+  }
+  return `Разговор идёт о записи еды из дневника (так она выглядит сейчас):
+${entry}
+
+Правка этой записи:
+- Если пользователь сообщает факт об этой еде, который меняет оценку (другой вес
+  порции, другой продукт, чего-то не было, «ещё был соус»), — вызови ${CORRECT_MEAL_TOOL}
+  с ПОЛНЫМ новым составом: все продукты записи с учётом правки, а не только изменённые.
+  Бот сохранит его и покажет обновлённую запись; в ответе коротко скажи, что поправила
+  и как изменились калории.
+- Вопросы, сомнения и предположения («это много?», «а если бы порция была 200 г?»)
+  запись не меняют — просто ответь.
+- В одном сообщении может быть и правка, и вопрос («было 200 г, это много?») — сделай
+  и то и другое.
+- Добавку к этой еде («ещё был соус») добавляй в эту запись через ${CORRECT_MEAL_TOOL}, а
+  не через offer_diary_entry: он для другой, отдельной еды или тренировки.
+- Другие записи ты поправить не можешь — подскажи кнопку «💬 Поправить или спросить» под
+  нужной записью. Удалить запись — кнопка «🗑 Удалить»; пустой состав не передавай.
+
+Как оценивать продукты при правке:
+${FOOD_ESTIMATION_RULES}
+- Ккал — целые, белки, жиры и углеводы — с одним знаком после запятой.`;
+}
+
 export const OFFER_DIARY_ENTRY_TOOL = "offer_diary_entry";
+export const CORRECT_MEAL_TOOL = "correct_meal";
+
+// Только для разговора о записи еды (см. buildMealBlock): коуч сам в БД не пишет —
+// возвращает новый состав, а сохраняет его бот (features/mealCorrection.ts).
+export const CORRECT_MEAL_TOOL_DEFINITION: Anthropic.Tool = {
+  name: CORRECT_MEAL_TOOL,
+  description:
+    "Исправить состав записи еды, которую вы обсуждаете: передай ПОЛНЫЙ новый состав " +
+    "(все продукты, а не только изменённые). Вызывай, только когда пользователь сообщает " +
+    "факт об этой еде, а не задаёт вопрос. Бот сохранит состав и покажет обновлённую запись.",
+  input_schema: {
+    type: "object",
+    properties: {
+      items: (FOOD_ANALYSIS_TOOL.input_schema.properties as Record<string, unknown>).items,
+    },
+    required: ["items"],
+  },
+};
 
 export const COACH_TOOLS: Anthropic.Tool[] = [
   {

@@ -3,10 +3,13 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../../db/schema.js";
 import { getUserTimeZone } from "../../db/users.js";
 import type { MyContext } from "../../context.js";
-import { askCoach, CoachError } from "../../ai/coach.js";
+import { askCoach, CoachError, type CoachMealContext, type CoachReply } from "../../ai/coach.js";
+import type { FoodItem } from "../../ai/foodAnalyzer.js";
+import { getMealById } from "../../db/meals.js";
 import { withChatAction } from "../../utils/chatAction.js";
 import { COACH_BUTTON, COACH_EXIT_BUTTON, mainKeyboard } from "../mainMenu.js";
-import { logDescribedMeal, transcribeVoiceMessage } from "../mealLogging.js";
+import { applyMealCorrection, correctionUndos, publishMealCorrection } from "../mealCorrection.js";
+import { buildStoredMealMessage, logDescribedMeal, transcribeVoiceMessage } from "../mealLogging.js";
 import {
   buildVoiceConfirmMessage,
   settleVoiceConfirmation,
@@ -15,7 +18,7 @@ import {
 } from "../voiceConfirm.js";
 import { createCoachDataSource } from "./dataSource.js";
 import { DiaryOfferStore } from "./diaryOffers.js";
-import { CoachSessionStore } from "./session.js";
+import { CoachSessionStore, type CoachSessionMeal } from "./session.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
@@ -39,6 +42,13 @@ const GREETING = [
 ].join("\n");
 
 const DISCUSS_GREETING = ["🐱 Давайте обсудим! Что хотите спросить?", "", MODE_HINT].join("\n");
+const MEAL_GREETING = [
+  "🐱 Давайте разберёмся с этой записью. Напишите, что поправить или о чём спросить: " +
+    "«порция была 200 г», «ещё был сырный соус», «это много на ужин?».",
+  "",
+  MODE_HINT,
+].join("\n");
+const MEAL_NOT_FOUND_TEXT = "Эта запись уже не найдена — возможно, её удалили.";
 const EXIT_TEXT = "Возвращаюсь к записи еды 🐾 Позовите, если что — кнопка «🐱 Спросить Ням-Ням».";
 const AUTO_CLOSE_TEXT =
   "🐱 Закрываю наш разговор — час без сообщений. Возвращаюсь к записи еды: " +
@@ -99,11 +109,13 @@ export function registerCoach(
     store.touch(userId);
     const sentAt = new Date();
 
+    let reply: CoachReply;
     try {
-      const reply = await askCoach({
+      reply = await askCoach({
         history: session.history,
         question,
         context: session.context,
+        meal: mealContext(userId, session.meal),
         dataSource: createCoachDataSource(db, userId, getUserTimeZone(db, userId)),
       });
       store.append(userId, question, reply.text);
@@ -118,6 +130,43 @@ export function registerCoach(
       await ctx.reply(
         err instanceof CoachError ? err.message : "🐱 Не смогла ответить. Попробуйте ещё раз.",
       );
+      return;
+    }
+
+    if (reply.mealCorrection && session.meal) {
+      await saveMealCorrection(ctx, userId, session.meal, reply.mealCorrection);
+    }
+  }
+
+  // Запись читается из БД на каждом ходу: после правки Ням-Ням видит новый состав.
+  function mealContext(userId: number, meal: CoachSessionMeal | undefined): CoachMealContext | undefined {
+    if (!meal) return undefined;
+    const row = getMealById(db, meal.id, userId);
+    return { entry: row ? buildStoredMealMessage(db, row, getUserTimeZone(db, userId)) : null };
+  }
+
+  // Новый состав от Ням-Ням сохраняет бот — так же, как после «✏️ Изменить».
+  async function saveMealCorrection(
+    ctx: MyContext,
+    userId: number,
+    meal: CoachSessionMeal,
+    items: FoodItem[],
+  ): Promise<void> {
+    try {
+      const applied = applyMealCorrection(db, correctionUndos, {
+        userId,
+        mealId: meal.id,
+        result: { foodDetected: true, items, notes: null },
+        sourceMessageId: meal.messageId,
+      });
+      if (!applied || !ctx.chat) {
+        await ctx.reply(`Не получилось поправить запись. ${MEAL_NOT_FOUND_TEXT}`);
+        return;
+      }
+      await publishMealCorrection(ctx.api, ctx.chat.id, applied, meal.messageId);
+    } catch (err) {
+      console.error("Не удалось сохранить правку записи от Ням-Ням:", err);
+      await ctx.reply("Не получилось сохранить правку записи, попробуйте ещё раз.");
     }
   }
 
@@ -150,6 +199,22 @@ export function registerCoach(
     await ctx.answerCallbackQuery();
     store.start(ctx.from.id, ctx.callbackQuery.message?.text);
     await ctx.reply(DISCUSS_GREETING, { reply_markup: coachKeyboard });
+  });
+
+  // «💬 Поправить или спросить» под записью еды: разговор о ней — на вопросы Ням-Ням
+  // отвечает, а правку («было 200 г») сохраняет в эту запись.
+  bot.callbackQuery(/^coach:meal:(\d+)$/, async (ctx) => {
+    const mealId = Number(ctx.match[1]);
+    if (!getMealById(db, mealId, ctx.from.id)) {
+      await ctx.answerCallbackQuery({ text: MEAL_NOT_FOUND_TEXT, show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    store.start(ctx.from.id, undefined, {
+      id: mealId,
+      messageId: ctx.callbackQuery.message?.message_id ?? null,
+    });
+    await ctx.reply(MEAL_GREETING, { reply_markup: coachKeyboard });
   });
 
   // «📝 Записать в дневник» под ответом коуча: сообщение пользователя разбирается как

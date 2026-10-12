@@ -3,7 +3,15 @@ import type { CoachMessage } from "../../ai/coach.js";
 export interface CoachSession {
   history: CoachMessage[];
   context?: string;
+  // Разговор о записи еды («💬 Поправить или спросить» под ней).
+  meal?: CoachSessionMeal;
   lastActivityAt: number;
+}
+
+export interface CoachSessionMeal {
+  id: number;
+  // Сообщение с записью, под которым нажали кнопку, — его обновляем после правки.
+  messageId: number | null;
 }
 
 export interface CoachSessionStoreOptions {
@@ -39,8 +47,8 @@ export class CoachSessionStore {
     this.expireListener = listener;
   }
 
-  start(userId: number, context?: string): CoachSession {
-    const session: CoachSession = { history: [], context, lastActivityAt: this.now() };
+  start(userId: number, context?: string, meal?: CoachSessionMeal): CoachSession {
+    const session: CoachSession = { history: [], context, meal, lastActivityAt: this.now() };
     this.sessions.set(userId, session);
     return session;
   }

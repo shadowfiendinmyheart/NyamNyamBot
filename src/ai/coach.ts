@@ -1,4 +1,5 @@
 import type { MealType, NutritionTotals } from "../db/meals.js";
+import type { FoodItem } from "./foodAnalyzer.js";
 import type {
   ActivityLevel,
   Goal,
@@ -118,7 +119,16 @@ export interface AskCoachInput {
   question: string;
   // С чего начался разговор (например, текст вечерней сводки из «Обсудить с Ням-Ням»).
   context?: string;
+  // Разговор о записи еды («💬 Поправить или спросить» под ней): коуч может вернуть
+  // исправленный состав в CoachReply.mealCorrection.
+  meal?: CoachMealContext;
   dataSource: CoachDataSource;
+}
+
+export interface CoachMealContext {
+  // Запись так, как её видит пользователь: тип, день, продукты с граммами и КБЖУ.
+  // null — запись удалили: править нечего.
+  entry: string | null;
 }
 
 export type PeriodKind = "day" | "week";
@@ -151,6 +161,9 @@ export interface CoachReply {
   // Коуч понял, что пользователь сообщил о съеденном или о тренировке, — под ответом
   // нужно предложить записать это сообщение в дневник.
   offerDiaryEntry: boolean;
+  // Только в разговоре о записи еды: пользователь сообщил факт, меняющий оценку, —
+  // полный новый состав записи. Сохраняет его бот, а не провайдер.
+  mealCorrection?: FoodItem[];
 }
 
 export type AskCoach = (input: AskCoachInput) => Promise<CoachReply>;

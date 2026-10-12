@@ -208,15 +208,19 @@ async function logPhotoMeal(db: Db, ctx: MyContext, photos: IncomingPhoto[]): Pr
 // Части альбома приходят отдельными обновлениями почти одновременно — ждём паузу.
 const ALBUM_COLLECT_DELAY_MS = 1500;
 
+export const MEAL_COACH_BUTTON = "💬 Поправить или спросить";
+
+// Правка и вопросы о записи — одна кнопка: разговор с Ням-Ням о ней (features/coach),
+// где на вопрос она отвечает, а на «было 200 г» поправляет запись. Старые кнопки
+// «✏️ Изменить» (correct:<id>) и «💬 Обсудить с Ням-Ням» (coach:discuss) в уже
+// отправленных сообщениях по-прежнему работают.
 export function mealActionsKeyboard(mealId: number): InlineKeyboard {
   return new InlineKeyboard()
-    .text("✏️ Изменить", `correct:${mealId}`)
     // Обработчик — в features/mealTime.ts.
     .text("🕐 Время", `meal_time:${mealId}`)
     .text("🗑 Удалить", `delete_meal:${mealId}`)
     .row()
-    // Обработчик — в features/coach: текст сообщения с оценкой становится контекстом разговора.
-    .text("💬 Обсудить с Ням-Ням", "coach:discuss");
+    .text(MEAL_COACH_BUTTON, `coach:meal:${mealId}`);
 }
 
 export function toMealItemInputs(items: FoodItem[]): MealItemInput[] {

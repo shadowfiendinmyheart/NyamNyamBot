@@ -42,6 +42,15 @@ describe("features/coach CoachSessionStore", () => {
     });
   });
 
+  it("помнит запись еды, о которой разговор, и забывает её в новом разговоре", () => {
+    const { store } = makeStore();
+    store.start(1, undefined, { id: 7, messageId: 42 });
+    expect(store.get(1)?.meal).toEqual({ id: 7, messageId: 42 });
+
+    store.start(1);
+    expect(store.get(1)?.meal).toBeUndefined();
+  });
+
   it("обрезает историю до последних maxMessages, начиная с вопроса", () => {
     const { store } = makeStore(4);
     store.start(1);

@@ -19,6 +19,7 @@ import {
 import { coachKeyboard, registerCoach } from "./features/coach/coach.js";
 import { CoachSessionStore } from "./features/coach/session.js";
 import { correctionConversation, registerCorrection } from "./features/correction.js";
+import { registerMealCorrection } from "./features/mealCorrection.js";
 import { registerMealLogging } from "./features/mealLogging.js";
 import { registerMealTime } from "./features/mealTime.js";
 import { motivationConversation, registerMotivation } from "./features/motivation.js";
@@ -115,6 +116,7 @@ registerWeightShortcut(bot, db);
 registerMealLogging(bot, db);
 registerMealTime(bot, db);
 registerCorrection(bot, db);
+registerMealCorrection(bot, db);
 
 try {
   await bot.init();

@@ -7,16 +7,21 @@ import {
   type CommentOnPeriodInput,
   type PeriodComment,
 } from "../ai/coach.js";
+import type { FoodItem } from "../ai/foodAnalyzer.js";
 import { trimToLastSentence } from "../utils/text.js";
+import { mapItem, type AnalyzeFoodToolItem } from "./analyzeFood.js";
 import { classifyApiError, createMessage } from "./client.js";
 import {
   ASSESS_DIET_TOOL,
   buildCommentRequest,
   buildContextBlock,
+  buildMealBlock,
   buildSnapshotBlock,
   COACH_SYSTEM_PROMPT,
   COACH_TOOLS,
   COMMENT_SYSTEM_PROMPT,
+  CORRECT_MEAL_TOOL,
+  CORRECT_MEAL_TOOL_DEFINITION,
   DIET_VERDICTS,
   OFFER_DIARY_ENTRY_TOOL,
 } from "./coachPrompts.js";
@@ -24,6 +29,9 @@ import {
 // Лимиты токенов держат ответ заведомо короче лимита сообщения Telegram (4096):
 // кириллица — примерно 2.5–3 символа на токен.
 const CHAT_MAX_TOKENS = 700;
+// В разговоре о записи еды в том же ответе может прийти её новый состав (correct_meal):
+// JSON продуктов с КБЖУ занимает сотни токенов — с прежним лимитом он обрывался бы.
+const MEAL_CHAT_MAX_TOKENS = 1500;
 // Оценка к отчёту — аргументы инструмента: JSON с русским текстом длиннее простого ответа.
 const COMMENT_MAX_TOKENS = 600;
 const MAX_REPLY_CHARS = 4000;
@@ -35,6 +43,9 @@ const MAX_TOOL_ROUNDS = 5;
 export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
   const system = [COACH_SYSTEM_PROMPT, buildSnapshotBlock(input.dataSource.getSnapshot())];
   if (input.context) system.push(buildContextBlock(input.context));
+  if (input.meal) system.push(buildMealBlock(input.meal.entry));
+  // Править можно только существующую запись, о которой идёт разговор.
+  const canCorrectMeal = typeof input.meal?.entry === "string";
 
   const messages: Anthropic.MessageParam[] = [
     ...input.history.map((m) => ({ role: m.role, content: m.text })),
@@ -42,35 +53,58 @@ export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
   ];
 
   let offerDiaryEntry = false;
+  let mealCorrection: FoodItem[] | undefined;
+  const reply = (response: Anthropic.Message): CoachReply => ({
+    text: finalizeText(response),
+    offerDiaryEntry,
+    ...(mealCorrection ? { mealCorrection } : {}),
+  });
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     const response = await createCoachMessage({
-      max_tokens: CHAT_MAX_TOKENS,
+      // Новый состав записи — аргументы инструмента рядом с текстом ответа.
+      max_tokens: canCorrectMeal ? MEAL_CHAT_MAX_TOKENS : CHAT_MAX_TOKENS,
       system: system.join("\n\n"),
-      tools: COACH_TOOLS,
+      tools: canCorrectMeal ? [...COACH_TOOLS, CORRECT_MEAL_TOOL_DEFINITION] : COACH_TOOLS,
       messages,
     });
 
     const toolUses = response.content.filter(
       (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
     );
+    // Обрыв по max_tokens — тоже здесь: если оборвался вызов инструмента, finalizeText
+    // бросит CoachError, и неполный состав записи не сохранится.
     if (response.stop_reason !== "tool_use" || toolUses.length === 0) {
-      return { text: finalizeText(response), offerDiaryEntry };
+      return reply(response);
     }
 
-    if (toolUses.some((toolUse) => toolUse.name === OFFER_DIARY_ENTRY_TOOL)) {
-      offerDiaryEntry = true;
-      // Модель написала ответ и вызвала только offer_diary_entry — результат этого
-      // инструмента ей не нужен, лишний запрос к API не делаем.
-      const hasText = response.content.some((b) => b.type === "text" && b.text.trim());
-      if (hasText && toolUses.every((toolUse) => toolUse.name === OFFER_DIARY_ENTRY_TOOL)) {
-        return { text: finalizeText(response), offerDiaryEntry };
+    let invalidCorrection = false;
+    for (const toolUse of toolUses) {
+      if (toolUse.name === OFFER_DIARY_ENTRY_TOOL) offerDiaryEntry = true;
+      if (toolUse.name === CORRECT_MEAL_TOOL && canCorrectMeal) {
+        try {
+          mealCorrection = parseMealCorrection(toolUse.input);
+        } catch {
+          // Ошибку модель получит результатом инструмента (runTool) и исправит состав.
+          invalidCorrection = true;
+        }
       }
     }
+
+    // Модель написала ответ и вызвала только offer_diary_entry / correct_meal — их
+    // результаты ей не нужны, лишний запрос к API не делаем.
+    const hasText = response.content.some((b) => b.type === "text" && b.text.trim());
+    const onlyReplyTools = toolUses.every(
+      (toolUse) =>
+        toolUse.name === OFFER_DIARY_ENTRY_TOOL ||
+        (toolUse.name === CORRECT_MEAL_TOOL && canCorrectMeal),
+    );
+    if (hasText && onlyReplyTools && !invalidCorrection) return reply(response);
+
     messages.push({ role: "assistant", content: response.content });
     messages.push({
       role: "user",
-      content: toolUses.map((toolUse) => runTool(input.dataSource, toolUse)),
+      content: toolUses.map((toolUse) => runTool(input.dataSource, toolUse, canCorrectMeal)),
     });
   }
 
@@ -137,9 +171,23 @@ function createCoachMessage(
   });
 }
 
+// Новый состав записи из correct_meal. Бросает Error с текстом для модели — она получит
+// его результатом инструмента и пришлёт состав заново.
+export function parseMealCorrection(input: unknown): FoodItem[] {
+  const items = (input as { items?: unknown } | null)?.items;
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error(
+      "Нужен полный непустой состав записи в items. Удалить запись пользователь может " +
+        "кнопкой «🗑 Удалить».",
+    );
+  }
+  return items.map((item: AnalyzeFoodToolItem) => mapItem(item));
+}
+
 function runTool(
   dataSource: CoachDataSource,
   toolUse: Anthropic.ToolUseBlock,
+  canCorrectMeal: boolean,
 ): Anthropic.ToolResultBlockParam {
   const args = (toolUse.input ?? {}) as Record<string, unknown>;
   console.log(`[coach] ${toolUse.name} ${JSON.stringify(args)}`);
@@ -148,7 +196,7 @@ function runTool(
     return {
       type: "tool_result",
       tool_use_id: toolUse.id,
-      content: JSON.stringify(callTool(dataSource, toolUse.name, args)),
+      content: JSON.stringify(callTool(dataSource, toolUse.name, args, canCorrectMeal)),
     };
   } catch (err) {
     return {
@@ -164,6 +212,7 @@ function callTool(
   dataSource: CoachDataSource,
   name: string,
   args: Record<string, unknown>,
+  canCorrectMeal: boolean,
 ): unknown {
   switch (name) {
     case "get_daily_summaries":
@@ -177,6 +226,11 @@ function callTool(
     case OFFER_DIARY_ENTRY_TOOL:
       // Записывает не модель, а сам пользователь — кнопкой под ответом (features/coach).
       return { ok: true, note: "Под ответом появится кнопка «📝 Записать в дневник»." };
+    case CORRECT_MEAL_TOOL:
+      if (!canCorrectMeal) throw new Error("Сейчас нет записи, которую можно поправить.");
+      // Сохраняет новый состав бот (features/mealCorrection.ts), а не модель.
+      parseMealCorrection(args);
+      return { ok: true, note: "Бот сохранит новый состав и покажет обновлённую запись." };
     default:
       throw new Error(`Неизвестный инструмент: ${name}`);
   }
