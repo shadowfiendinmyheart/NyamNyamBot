@@ -35,6 +35,8 @@ import {
   type DeletedEntryStore,
   type EntryKind,
 } from "./deletedEntries.js";
+// Только тип: функцию передаёт bot.ts — модуль коуча сюда не импортируется.
+import type { StartMealDiscussion } from "./coach/coach.js";
 import { buildStoredMealMessage, mealActionsKeyboard } from "./mealLogging.js";
 import { buildTodayReport, formatShortDay } from "./reports.js";
 import { buildStoredWorkoutMessage, workoutActionsKeyboard } from "./workout.js";
@@ -215,7 +217,11 @@ function restoreAnswer(outcome: RestoreOutcome): { text: string; show_alert?: bo
   }
 }
 
-export function registerHistory(bot: Bot<MyContext>, db: Db): void {
+export function registerHistory(
+  bot: Bot<MyContext>,
+  db: Db,
+  startMealDiscussion: StartMealDiscussion,
+): void {
   bot.command("today", async (ctx) => {
     await sendDayView(ctx, db);
   });
@@ -226,7 +232,8 @@ export function registerHistory(bot: Bot<MyContext>, db: Db): void {
   });
 
   // ✏️ из истории: присылаем запись отдельным сообщением с её обычными кнопками и сразу
-  // начинаем правку — результат правки обновит это сообщение, а не историю.
+  // начинаем правку — результат правки обновит это сообщение, а не историю. Еду правит
+  // разговор с Ням-Ням о записи (как «💬 Поправить или спросить»), тренировку — диалог.
   bot.callbackQuery(/^day_edit:(meal|workout):(\d+)$/, async (ctx) => {
     const userId = ctx.from.id;
     const kind = ctx.match[1] as EntryKind;
@@ -248,7 +255,7 @@ export function registerHistory(bot: Bot<MyContext>, db: Db): void {
         buildStoredMealMessage(db, meal, getUserTimeZone(db, userId)),
         { reply_markup: mealActionsKeyboard(id) },
       );
-      await ctx.conversation.enter("correction", id, card.chat.id, card.message_id);
+      await startMealDiscussion(ctx, id, card.message_id);
       return;
     }
 

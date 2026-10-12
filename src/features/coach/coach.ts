@@ -2,7 +2,11 @@ import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../../db/schema.js";
 import { getUserTimeZone } from "../../db/users.js";
-import type { MyContext } from "../../context.js";
+import {
+  FINISH_CONVERSATION_FIRST_TEXT,
+  hasActiveConversation,
+  type MyContext,
+} from "../../context.js";
 import { askCoach, CoachError, type CoachMealContext, type CoachReply } from "../../ai/coach.js";
 import type { FoodItem } from "../../ai/foodAnalyzer.js";
 import { getMealById } from "../../db/meals.js";
@@ -67,6 +71,23 @@ export const coachKeyboard = new Keyboard()
 
 export function coachDiscussKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text("💬 Обсудить с Ням-Ням", "coach:discuss");
+}
+
+// Разговор с Ням-Ням о записи еды: вопросы — ответ, правка — новый состав записи.
+// messageId — сообщение с записью, его бот обновит после правки.
+export type StartMealDiscussion = (
+  ctx: MyContext,
+  mealId: number,
+  messageId: number | null,
+) => Promise<void>;
+
+// Кнопка «💬 Поправить или спросить» и «✏️» в истории (features/history.ts).
+export function createMealDiscussion(store: CoachSessionStore): StartMealDiscussion {
+  return async (ctx, mealId, messageId) => {
+    if (!ctx.from) return;
+    store.start(ctx.from.id, undefined, { id: mealId, messageId });
+    await ctx.reply(MEAL_GREETING, { reply_markup: coachKeyboard });
+  };
 }
 
 function diaryOfferKeyboard(offerId: number): InlineKeyboard {
@@ -163,6 +184,8 @@ export function registerCoach(
         await ctx.reply(`Не получилось поправить запись. ${MEAL_NOT_FOUND_TEXT}`);
         return;
       }
+      // Тот же состав, что уже записан: ответ Ням-Ням уже прозвучал, карточка не нужна.
+      if (applied === "unchanged") return;
       await publishMealCorrection(ctx.api, ctx.chat.id, applied, meal.messageId);
     } catch (err) {
       console.error("Не удалось сохранить правку записи от Ням-Ням:", err);
@@ -203,18 +226,21 @@ export function registerCoach(
 
   // «💬 Поправить или спросить» под записью еды: разговор о ней — на вопросы Ням-Ням
   // отвечает, а правку («было 200 г») сохраняет в эту запись.
+  const startMealDiscussion = createMealDiscussion(store);
   bot.callbackQuery(/^coach:meal:(\d+)$/, async (ctx) => {
     const mealId = Number(ctx.match[1]);
     if (!getMealById(db, mealId, ctx.from.id)) {
       await ctx.answerCallbackQuery({ text: MEAL_NOT_FOUND_TEXT, show_alert: true });
       return;
     }
+    // Пока открыт диалог (например, старая «✏️ Изменить»), текст уйдёт ему, а не Ням-Ням:
+    // вопрос «это много?» пересчитал бы запись.
+    if (hasActiveConversation(ctx)) {
+      await ctx.answerCallbackQuery({ text: FINISH_CONVERSATION_FIRST_TEXT, show_alert: true });
+      return;
+    }
     await ctx.answerCallbackQuery();
-    store.start(ctx.from.id, undefined, {
-      id: mealId,
-      messageId: ctx.callbackQuery.message?.message_id ?? null,
-    });
-    await ctx.reply(MEAL_GREETING, { reply_markup: coachKeyboard });
+    await startMealDiscussion(ctx, mealId, ctx.callbackQuery.message?.message_id ?? null);
   });
 
   // «📝 Записать в дневник» под ответом коуча: сообщение пользователя разбирается как

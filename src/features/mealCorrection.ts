@@ -1,4 +1,5 @@
 import { Bot, InlineKeyboard, type Api } from "grammy";
+import type { InlineKeyboardMarkup } from "grammy/types";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import type { MyContext } from "../context.js";
@@ -8,7 +9,7 @@ import {
   getMealItemsForMeals,
   updateMeal,
   type MealItemInput,
-  type MealItemRow,
+  mealItemRowsToInputs,
 } from "../db/meals.js";
 import { getUserTimeZone } from "../db/users.js";
 import { buildStoredMealMessage, mealActionsKeyboard, toMealItemInputs } from "./mealLogging.js";
@@ -82,15 +83,8 @@ export interface AppliedCorrection {
   undoId: number;
 }
 
-function toItemInputs(rows: MealItemRow[]): MealItemInput[] {
-  return rows.map(({ name, weightG, kcal, proteinG, fatG, carbG }) => ({
-    name,
-    weightG,
-    kcal,
-    proteinG,
-    fatG,
-    carbG,
-  }));
+function currentItems(db: Db, mealId: number): MealItemInput[] {
+  return mealItemRowsToInputs(getMealItemsForMeals(db, [mealId]));
 }
 
 function sameItems(a: MealItemInput[], b: MealItemInput[]): boolean {
@@ -103,7 +97,8 @@ export function buildCorrectionHeader(beforeKcal: number, afterKcal: number): st
     : `✅ Обновила запись: было ${beforeKcal} ккал, стало ${afterKcal}`;
 }
 
-// Сохраняет новый состав записи. undefined — записи нет (удалили) или она чужая.
+// Сохраняет новый состав записи. undefined — записи нет (удалили) или она чужая;
+// "unchanged" — состав тот же, что уже записан: сообщать и отменять нечего.
 export function applyMealCorrection(
   db: Db,
   store: CorrectionUndoStore,
@@ -113,21 +108,21 @@ export function applyMealCorrection(
     result: AnalyzeFoodResult;
     sourceMessageId: number | null;
   },
-): AppliedCorrection | undefined {
+): AppliedCorrection | "unchanged" | undefined {
   const { userId, mealId, result, sourceMessageId } = input;
   const items = toMealItemInputs(result.items);
 
   const changed = db.transaction(() => {
     const before = getMealById(db, mealId, userId);
     if (!before) return undefined;
-    const previousItems = toItemInputs(getMealItemsForMeals(db, [mealId]));
+    const previousItems = currentItems(db, mealId);
+    if (sameItems(previousItems, items)) return "unchanged" as const;
     if (!updateMeal(db, mealId, userId, { items, rawClaudeResponse: result })) return undefined;
     const after = getMealById(db, mealId, userId);
     if (!after) return undefined;
-    const appliedItems = toItemInputs(getMealItemsForMeals(db, [mealId]));
-    return { before, previousItems, after, appliedItems };
+    return { before, previousItems, after, appliedItems: currentItems(db, mealId) };
   });
-  if (!changed) return undefined;
+  if (!changed || changed === "unchanged") return changed;
 
   const undoId = store.add({
     userId,
@@ -173,7 +168,7 @@ export async function publishMealCorrection(
 export type UndoCorrectionResult =
   | { outcome: "undone"; mealId: number; entryText: string; sourceMessageId: number | null }
   // Запись меняли после этой правки — отмена затёрла бы более позднее изменение.
-  | { outcome: "changed"; mealId: number }
+  | { outcome: "changed" }
   // Бот перезапускался, кнопку уже нажимали или запись удалили.
   | { outcome: "unavailable" };
 
@@ -189,19 +184,30 @@ export function undoMealCorrection(
 
   const restored = db.transaction(() => {
     if (!getMealById(db, mealId, userId)) return "unavailable" as const;
-    const current = toItemInputs(getMealItemsForMeals(db, [mealId]));
-    if (!sameItems(current, entry.applied)) return "changed" as const;
+    if (!sameItems(currentItems(db, mealId), entry.applied)) return "changed" as const;
     if (!updateMeal(db, mealId, userId, entry.previous)) return "unavailable" as const;
     return getMealById(db, mealId, userId) ?? ("unavailable" as const);
   });
 
   if (restored === "unavailable") return { outcome: "unavailable" };
-  if (restored === "changed") return { outcome: "changed", mealId };
+  if (restored === "changed") return { outcome: "changed" };
   return {
     outcome: "undone",
     mealId,
     entryText: buildStoredMealMessage(db, restored, getUserTimeZone(db, userId)),
     sourceMessageId: entry.sourceMessageId,
+  };
+}
+
+export function withoutUndoButton(markup: InlineKeyboardMarkup): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: markup.inline_keyboard
+      .map((row) =>
+        row.filter(
+          (button) => !("callback_data" in button && button.callback_data.startsWith("undo_fix:")),
+        ),
+      )
+      .filter((row) => row.length > 0),
   };
 }
 
@@ -222,10 +228,12 @@ export function registerMealCorrection(bot: Bot<MyContext>, db: Db): void {
             : UNDO_CORRECTION_UNAVAILABLE_TEXT,
         show_alert: true,
       });
-      // Кнопка отмены больше не сработает — убираем её, остальные оставляем.
-      if (result.outcome === "changed") {
+      // Кнопка отмены больше не сработает (запись в хранилище уже израсходована) —
+      // убираем её, остальные кнопки оставляем.
+      const markup = ctx.callbackQuery.message?.reply_markup;
+      if (markup) {
         await ctx
-          .editMessageReplyMarkup({ reply_markup: mealActionsKeyboard(result.mealId) })
+          .editMessageReplyMarkup({ reply_markup: withoutUndoButton(markup) })
           .catch(() => {});
       }
       return;

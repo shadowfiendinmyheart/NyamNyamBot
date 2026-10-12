@@ -16,7 +16,7 @@ import {
   resetConfirmKeyboard,
   WELCOME_BACK_TEXT,
 } from "./features/mainMenu.js";
-import { coachKeyboard, registerCoach } from "./features/coach/coach.js";
+import { coachKeyboard, createMealDiscussion, registerCoach } from "./features/coach/coach.js";
 import { CoachSessionStore } from "./features/coach/session.js";
 import { correctionConversation, registerCorrection } from "./features/correction.js";
 import { registerMealCorrection } from "./features/mealCorrection.js";
@@ -102,7 +102,7 @@ bot.command("help", async (ctx) => {
 });
 
 registerOnboarding(bot);
-registerHistory(bot, db);
+registerHistory(bot, db, createMealDiscussion(coachSessions));
 registerMainMenu(bot, db);
 registerWeight(bot, db);
 registerWorkout(bot, db);

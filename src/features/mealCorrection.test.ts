@@ -12,6 +12,8 @@ import {
   correctionCardKeyboard,
   CorrectionUndoStore,
   undoMealCorrection,
+  withoutUndoButton,
+  type AppliedCorrection,
 } from "./mealCorrection.js";
 
 function makeDb() {
@@ -51,23 +53,28 @@ describe("features/mealCorrection", () => {
     });
   });
 
-  it("сохраняет новый состав и показывает, как изменились калории", () => {
+  function apply(sourceMessageId: number | null = 42): AppliedCorrection {
     const applied = applyMealCorrection(db, store, {
       userId: 1,
       mealId,
       result: corrected,
-      sourceMessageId: 42,
+      sourceMessageId,
     });
+    if (!applied || applied === "unchanged") throw new Error("правка не применилась");
+    return applied;
+  }
 
-    expect(applied).toBeDefined();
+  it("сохраняет новый состав и показывает, как изменились калории", () => {
+    const applied = apply();
+
     expect(getMealById(db, mealId, 1)?.kcal).toBe(500);
     expect(getMealItemsForMeals(db, [mealId])).toMatchObject([{ name: "пельмени", weightG: 200 }]);
-    expect(applied!.cardText.startsWith("✅ Обновила запись: было 250 ккал, стало 500\n\n")).toBe(true);
-    expect(applied!.cardText).toContain(applied!.entryText);
-    expect(applied!.entryText).toContain("пельмени — 200 г: 500 ккал");
+    expect(applied.cardText.startsWith("✅ Обновила запись: было 250 ккал, стало 500\n\n")).toBe(true);
+    expect(applied.cardText).toContain(applied.entryText);
+    expect(applied.entryText).toContain("пельмени — 200 г: 500 ккал");
   });
 
-  it("чужую или удалённую запись не трогает", () => {
+  it("чужую запись не трогает", () => {
     expect(
       applyMealCorrection(db, store, { userId: 2, mealId, result: corrected, sourceMessageId: null }),
     ).toBeUndefined();
@@ -75,13 +82,18 @@ describe("features/mealCorrection", () => {
     expect(store.size).toBe(0);
   });
 
+  it("тот же состав — «unchanged»: без записи, карточки и отмены", () => {
+    apply();
+    const sizeAfterFirst = store.size;
+
+    expect(
+      applyMealCorrection(db, store, { userId: 1, mealId, result: corrected, sourceMessageId: null }),
+    ).toBe("unchanged");
+    expect(store.size).toBe(sizeAfterFirst);
+  });
+
   it("«↩️ Отменить правку» возвращает прежний состав и прежний ответ ИИ", () => {
-    const applied = applyMealCorrection(db, store, {
-      userId: 1,
-      mealId,
-      result: corrected,
-      sourceMessageId: 42,
-    })!;
+    const applied = apply();
 
     const result = undoMealCorrection(db, store, applied.undoId, 1);
 
@@ -95,19 +107,14 @@ describe("features/mealCorrection", () => {
   });
 
   it("не отменяет, если запись меняли после правки, и не отдаёт отмену чужому", () => {
-    const applied = applyMealCorrection(db, store, {
-      userId: 1,
-      mealId,
-      result: corrected,
-      sourceMessageId: null,
-    })!;
+    const applied = apply(null);
     expect(undoMealCorrection(db, store, applied.undoId, 2)).toEqual({ outcome: "unavailable" });
 
     updateMeal(db, mealId, 1, {
       items: [{ name: "пельмени", weightG: 300, kcal: 750, proteinG: 30, fatG: 37.5, carbG: 75 }],
     });
 
-    expect(undoMealCorrection(db, store, applied.undoId, 1)).toEqual({ outcome: "changed", mealId });
+    expect(undoMealCorrection(db, store, applied.undoId, 1)).toEqual({ outcome: "changed" });
     expect(getMealById(db, mealId, 1)?.kcal).toBe(750);
   });
 
@@ -115,10 +122,14 @@ describe("features/mealCorrection", () => {
     expect(buildCorrectionHeader(300, 300)).toBe("✅ Обновила запись:");
   });
 
-  it("под обновлённой записью — кнопки записи и «↩️ Отменить правку»", () => {
-    const data = correctionCardKeyboard(7, 123).inline_keyboard.flat().map((b) =>
-      "callback_data" in b ? b.callback_data : undefined,
-    );
-    expect(data).toEqual(["meal_time:7", "delete_meal:7", "coach:meal:7", "undo_fix:123"]);
+  it("под обновлённой записью — кнопки записи и «↩️ Отменить правку», её можно убрать", () => {
+    const keyboard = correctionCardKeyboard(7, 123);
+    const data = (markup: { inline_keyboard: Array<Array<object>> }) =>
+      markup.inline_keyboard.flat().map((b) => ("callback_data" in b ? b.callback_data : undefined));
+
+    expect(data(keyboard)).toEqual(["meal_time:7", "delete_meal:7", "coach:meal:7", "undo_fix:123"]);
+    const stripped = withoutUndoButton(keyboard);
+    expect(data(stripped)).toEqual(["meal_time:7", "delete_meal:7", "coach:meal:7"]);
+    expect(stripped.inline_keyboard).toHaveLength(2);
   });
 });

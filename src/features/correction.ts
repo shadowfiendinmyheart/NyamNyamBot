@@ -203,6 +203,10 @@ export function correctionConversation(db: Db, api: Api) {
       await ctx.reply("Не получилось обновить запись — возможно, она была удалена.");
       return;
     }
+    if (applied === "unchanged") {
+      await ctx.reply("С учётом уточнения состав не изменился — оставила запись как есть.");
+      return;
+    }
     await conversation.external(() => publishMealCorrection(api, chatId, applied, messageId));
   };
 }

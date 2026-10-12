@@ -225,6 +225,18 @@ export function getMealTimesBetween(
     .all();
 }
 
+// Продукты записи из БД — во вход createMeal/updateMeal (без id и meal_id).
+export function mealItemRowsToInputs(rows: MealItemRow[]): MealItemInput[] {
+  return rows.map(({ name, weightG, kcal, proteinG, fatG, carbG }) => ({
+    name,
+    weightG,
+    kcal,
+    proteinG,
+    fatG,
+    carbG,
+  }));
+}
+
 export function getMealItemsForMeals(db: Db, mealIds: number[]): MealItemRow[] {
   if (mealIds.length === 0) return [];
   return db
@@ -255,21 +267,13 @@ export function copyMeal(
 ): number | undefined {
   const meal = getMealById(db, mealId, userId);
   if (!meal) return undefined;
-  const items = getMealItemsForMeals(db, [meal.id]);
   return createMeal(db, {
     userId,
     mealType: at.mealType,
     source: meal.source,
     telegramFileId: meal.telegramFileId,
     description: meal.description,
-    items: items.map(({ name, weightG, kcal, proteinG, fatG, carbG }) => ({
-      name,
-      weightG,
-      kcal,
-      proteinG,
-      fatG,
-      carbG,
-    })),
+    items: mealItemRowsToInputs(getMealItemsForMeals(db, [meal.id])),
     rawClaudeResponse: meal.rawClaudeResponse,
     loggedAt: at.loggedAt,
   });
