@@ -1,6 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { config } from "../config.js";
-import { classifyApiError, getClient, THINKING_DISABLED } from "./client.js";
+import type Anthropic from "@anthropic-ai/sdk";
+import { classifyApiError, createMessage } from "./client.js";
 import { FoodAnalyzerError } from "../ai/foodAnalyzer.js";
 import type { AnalyzeFoodInput, AnalyzeFoodResult, FoodItem } from "../ai/foodAnalyzer.js";
 import { FOOD_ANALYSIS_TOOL, SYSTEM_PROMPT } from "./prompts.js";
@@ -36,19 +35,15 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
     content.push({ type: "text", text: input.text });
   }
 
-  const response = await getClient()
-    .messages.create({
-      model: config.anthropicModel,
-      max_tokens: 16000,
-      system: SYSTEM_PROMPT,
-      tools: [FOOD_ANALYSIS_TOOL],
-      tool_choice: { type: "tool", name: FOOD_ANALYSIS_TOOL.name },
-      messages: [{ role: "user", content }],
-      ...THINKING_DISABLED,
-    })
-    .catch((err: unknown) => {
-      throw toFoodAnalyzerError(err, "photo");
-    });
+  const response = await createMessage({
+    max_tokens: 16000,
+    system: SYSTEM_PROMPT,
+    tools: [FOOD_ANALYSIS_TOOL],
+    tool_choice: { type: "tool", name: FOOD_ANALYSIS_TOOL.name },
+    messages: [{ role: "user", content }],
+  }).catch((err: unknown) => {
+    throw toFoodAnalyzerError(err, "photo");
+  });
 
   const toolUse = response.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
@@ -60,8 +55,9 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
     );
   }
   if (!toolUse) {
-    console.error("DEBUG raw response:", JSON.stringify(response, null, 2));
-    throw new Error("Claude не вернул структурированный ответ через analyze_food");
+    throw new Error(
+      `Claude не вернул структурированный ответ через analyze_food (stop_reason: ${response.stop_reason})`,
+    );
   }
 
   return mapToolInput(toolUse.input as AnalyzeFoodToolInput);

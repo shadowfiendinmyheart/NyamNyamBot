@@ -1,5 +1,4 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { config } from "../config.js";
 import {
   CoachError,
   type AskCoachInput,
@@ -9,7 +8,7 @@ import {
   type PeriodComment,
 } from "../ai/coach.js";
 import { trimToLastSentence } from "../utils/text.js";
-import { classifyApiError, getClient, THINKING_DISABLED } from "./client.js";
+import { classifyApiError, createMessage } from "./client.js";
 import {
   ASSESS_DIET_TOOL,
   buildCommentRequest,
@@ -45,7 +44,7 @@ export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
   let offerDiaryEntry = false;
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-    const response = await createMessage({
+    const response = await createCoachMessage({
       max_tokens: CHAT_MAX_TOKENS,
       system: system.join("\n\n"),
       tools: COACH_TOOLS,
@@ -82,7 +81,7 @@ export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
 }
 
 export async function commentOnPeriod(input: CommentOnPeriodInput): Promise<PeriodComment> {
-  const response = await createMessage({
+  const response = await createCoachMessage({
     max_tokens: COMMENT_MAX_TOKENS,
     system: COMMENT_SYSTEM_PROMPT,
     tools: [ASSESS_DIET_TOOL],
@@ -130,14 +129,12 @@ function assessmentError(): CoachError {
   });
 }
 
-async function createMessage(
+function createCoachMessage(
   params: Omit<Anthropic.MessageCreateParamsNonStreaming, "model">,
 ): Promise<Anthropic.Message> {
-  return getClient()
-    .messages.create({ model: config.anthropicModel, ...params, ...THINKING_DISABLED })
-    .catch((err: unknown) => {
-      throw toCoachError(err);
-    });
+  return createMessage(params).catch((err: unknown) => {
+    throw toCoachError(err);
+  });
 }
 
 function runTool(

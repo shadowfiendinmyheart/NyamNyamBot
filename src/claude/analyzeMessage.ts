@@ -1,5 +1,4 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { config } from "../config.js";
 import { FoodAnalyzerError } from "../ai/foodAnalyzer.js";
 import type {
   AnalyzeMessageInput,
@@ -16,7 +15,7 @@ import {
   type WorkoutActivityType,
   type WorkoutIntensity,
 } from "../nutrition/calculations.js";
-import { getClient, THINKING_DISABLED } from "./client.js";
+import { createMessage } from "./client.js";
 import { mapItem, toFoodAnalyzerError, type AnalyzeFoodToolItem } from "./analyzeFood.js";
 import { DIARY_ENTRY_SYSTEM_PROMPT, DIARY_ENTRY_TOOL } from "./prompts.js";
 
@@ -57,19 +56,15 @@ export async function analyzeMessage({
     system.push({ type: "text", text: `Сейчас у пользователя: ${formatLocalNow(now, timeZone)}.` });
   }
 
-  const response = await getClient()
-    .messages.create({
-      model: config.anthropicModel,
-      max_tokens: 16000,
-      system,
-      tools: [DIARY_ENTRY_TOOL],
-      tool_choice: { type: "tool", name: DIARY_ENTRY_TOOL.name },
-      messages: [{ role: "user", content: text }],
-      ...THINKING_DISABLED,
-    })
-    .catch((err: unknown) => {
-      throw toFoodAnalyzerError(err, "message");
-    });
+  const response = await createMessage({
+    max_tokens: 16000,
+    system,
+    tools: [DIARY_ENTRY_TOOL],
+    tool_choice: { type: "tool", name: DIARY_ENTRY_TOOL.name },
+    messages: [{ role: "user", content: text }],
+  }).catch((err: unknown) => {
+    throw toFoodAnalyzerError(err, "message");
+  });
 
   const toolUse = response.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
@@ -81,7 +76,9 @@ export async function analyzeMessage({
     );
   }
   if (!toolUse) {
-    throw new Error("Claude не вернул структурированный ответ через log_diary_entry");
+    throw new Error(
+      `Claude не вернул структурированный ответ через log_diary_entry (stop_reason: ${response.stop_reason})`,
+    );
   }
 
   const raw = toolUse.input as DiaryEntryToolInput;

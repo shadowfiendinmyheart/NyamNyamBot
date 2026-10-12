@@ -207,4 +207,13 @@ describe("claude/analyzeMessage", () => {
     expect(system).toContain("среда, 7 октября 2026");
     expect(system).toContain("21:10");
   });
+
+  it("ответ прокси 200 не в формате Anthropic — retryable FoodAnalyzerError, а не TypeError", async () => {
+    createMock.mockResolvedValue({ choices: [] });
+
+    await expect(analyzeMessage({ text: "банан" })).rejects.toMatchObject({
+      name: "FoodAnalyzerError",
+      retryable: true,
+    });
+  });
 });

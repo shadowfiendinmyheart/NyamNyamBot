@@ -258,6 +258,17 @@ describe("claude/coach askCoach", () => {
       askCoach({ history: [], question: "?", dataSource: makeDataSource() }),
     ).rejects.toMatchObject({ name: "CoachError", retryable: false });
   });
+
+  it("ответ прокси 200 не в формате Anthropic — retryable CoachError, а не TypeError", async () => {
+    createMock.mockResolvedValue({ error: { message: "upstream provider error" } });
+
+    const err = await askCoach({ history: [], question: "?", dataSource: makeDataSource() }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toMatchObject({ name: "CoachError", retryable: true });
+    expect(String((err as Error).cause)).toContain("upstream provider error");
+  });
 });
 
 describe("claude/coach commentOnPeriod", () => {

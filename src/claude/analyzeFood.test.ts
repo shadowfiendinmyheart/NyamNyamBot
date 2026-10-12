@@ -4,12 +4,20 @@ const createMock = vi.fn();
 const clientConstructorMock = vi.fn();
 
 vi.mock("@anthropic-ai/sdk", () => ({
-  default: class {
-    messages = { create: createMock };
-    constructor(options: unknown) {
-      clientConstructorMock(options);
-    }
-  },
+  // Классы ошибок нужны classifyApiError: без них любой instanceof в нём бросил бы TypeError.
+  default: Object.assign(
+    class {
+      messages = { create: createMock };
+      constructor(options: unknown) {
+        clientConstructorMock(options);
+      }
+    },
+    {
+      APIConnectionError: class extends Error {},
+      RateLimitError: class extends Error {},
+      APIError: class extends Error {},
+    },
+  ),
 }));
 
 vi.mock("../config.js", () => ({
@@ -185,5 +193,29 @@ describe("claude/analyzeFood", () => {
     createMock.mockResolvedValue({ content: [{ type: "text", text: "не могу помочь" }] });
 
     await expect(analyzeFood({ text: "гречка" })).rejects.toThrow(/analyze_food/);
+  });
+
+  it.each([
+    ["a proxy error object", { error: { message: "upstream provider error" } }, "upstream provider error"],
+    ["an OpenAI-shaped body", { choices: [] }, '"choices"'],
+    ["an HTML page", "<html>502 Bad Gateway</html>", "502 Bad Gateway"],
+  ])("turns %s returned with 200 into a retryable error carrying the body", async (_, body, logged) => {
+    createMock.mockResolvedValue(body);
+
+    const err = await analyzeFood({ images: [{ imageBase64: "X", mimeType: "image/jpeg" }] }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toMatchObject({ name: "FoodAnalyzerError", retryable: true });
+    expect(String((err as Error).cause)).toContain(logged);
+  });
+
+  it("turns an unparsable JSON body returned with 200 into a retryable error", async () => {
+    createMock.mockRejectedValue(new SyntaxError("Unexpected end of JSON input"));
+
+    await expect(analyzeFood({ text: "гречка" })).rejects.toMatchObject({
+      name: "FoodAnalyzerError",
+      retryable: true,
+    });
   });
 });

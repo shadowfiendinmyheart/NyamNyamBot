@@ -4,7 +4,7 @@ import { proxyHttpAgent } from "../utils/proxy.js";
 
 let client: Anthropic | undefined;
 
-export function getClient(): Anthropic {
+function getClient(): Anthropic {
   client ??= new Anthropic({
     apiKey: config.anthropicApiKey,
     baseURL: config.anthropicBaseUrl,
@@ -26,7 +26,48 @@ export function getClient(): Anthropic {
 // Прокси может подменить модель (например, на claude-opus-4-8) и сам включить
 // thinking — тогда модель тратит весь max_tokens на рассуждения и не успевает
 // ответить. Отключаем явно; в типах SDK 0.32 этого поля ещё нет.
-export const THINKING_DISABLED = { thinking: { type: "disabled" } } as object;
+const THINKING_DISABLED = { thinking: { type: "disabled" } } as object;
+
+// Прокси (ANTHROPIC_BASE_URL) при сбое у себя иногда отвечает 200, но не сообщением
+// Anthropic, а своей ошибкой ({"error": ...}), ответом в формате OpenAI или
+// HTML-страницей. SDK форму ответа не проверяет — без этой проверки код падал бы на
+// response.content с TypeError, а пользователь не узнал бы, что сбой временный.
+// Начало тела — в тексте ошибки: вызывающий код логирует её (через cause) рядом с тем,
+// чей это был запрос.
+const MAX_LOGGED_BODY_CHARS = 1000;
+
+export class UnexpectedResponseError extends Error {
+  constructor(body: string) {
+    super(
+      `ИИ-сервис вернул ответ не в формате Anthropic Messages: ${body.slice(0, MAX_LOGGED_BODY_CHARS)}`,
+    );
+    this.name = "UnexpectedResponseError";
+  }
+}
+
+function ensureMessage(response: unknown): Anthropic.Message {
+  if (
+    typeof response === "object" &&
+    response !== null &&
+    Array.isArray((response as { content?: unknown }).content)
+  ) {
+    return response as Anthropic.Message;
+  }
+  throw new UnexpectedResponseError(
+    typeof response === "string" ? response : String(JSON.stringify(response)),
+  );
+}
+
+// Единственная точка вызова Messages API: модель из конфига, отключённый thinking и
+// проверка формы ответа — каждому месту вызова остаётся лишь .catch с переводом ошибки
+// для пользователя.
+export function createMessage(
+  params: Omit<Anthropic.MessageCreateParamsNonStreaming, "model">,
+): Promise<Anthropic.Message> {
+  return getClient()
+    .messages.create({ model: config.anthropicModel, ...params, ...THINKING_DISABLED })
+    .then(ensureMessage);
+}
 
 // Прокси (ANTHROPIC_BASE_URL) время от времени не укладывается в свой собственный
 // Cloudflare-таймаут на медленных запросах (524 и подобные) — это внешняя
@@ -35,6 +76,10 @@ export const THINKING_DISABLED = { thinking: { type: "disabled" } } as object;
 export type ApiErrorKind = "unavailable" | "timeout" | "other";
 
 export function classifyApiError(err: unknown): ApiErrorKind {
+  // SyntaxError — тело ответа 200 с content-type JSON не разобралось (обрезано или это
+  // HTML-страница прокси): SDK бросает его в обход своих повторов. Как и
+  // UnexpectedResponseError — сбой на стороне сервиса.
+  if (err instanceof UnexpectedResponseError || err instanceof SyntaxError) return "unavailable";
   if (err instanceof Anthropic.APIConnectionError || err instanceof Anthropic.RateLimitError) {
     return "unavailable";
   }
