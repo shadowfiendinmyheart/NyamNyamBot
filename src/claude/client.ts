@@ -26,7 +26,14 @@ function getClient(): Anthropic {
 // Прокси может подменить модель (например, на claude-opus-4-8) и сам включить
 // thinking — тогда модель тратит весь max_tokens на рассуждения и не успевает
 // ответить. Отключаем явно; в типах SDK 0.32 этого поля ещё нет.
-const THINKING_DISABLED = { thinking: { type: "disabled" } } as object;
+// Как отключить — зависит от модели: Sonnet 5.5 на {type: "disabled"} отвечает
+// ошибкой («Reasoning is mandatory…»), выключатель у неё — {type: "between_tools"};
+// у Opus 5.5 и Fable thinking не отключается вовсе — поле не передаём.
+export function thinkingOff(model: string): object {
+  if (/sonnet-5[.-]5/.test(model)) return { thinking: { type: "between_tools" } };
+  if (/opus-5[.-]5|fable|mythos/.test(model)) return {};
+  return { thinking: { type: "disabled" } };
+}
 
 // Прокси (ANTHROPIC_BASE_URL) при сбое у себя иногда отвечает 200, но не сообщением
 // Anthropic, а своей ошибкой ({"error": ...}), ответом в формате OpenAI или
@@ -65,7 +72,11 @@ export function createMessage(
   params: Omit<Anthropic.MessageCreateParamsNonStreaming, "model">,
 ): Promise<Anthropic.Message> {
   return getClient()
-    .messages.create({ model: config.anthropicModel, ...params, ...THINKING_DISABLED })
+    .messages.create({
+      model: config.anthropicModel,
+      ...params,
+      ...thinkingOff(config.anthropicModel),
+    })
     .then(ensureMessage);
 }
 
