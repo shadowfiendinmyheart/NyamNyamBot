@@ -412,3 +412,70 @@ cron-отчёты/напоминания, Docker-деплой) — отдель�
   гречка с курицей и салат» есть строка со светофором про состав и строка 💡 с советом
   с учётом цели из профиля; в недельном отчёте — то же за неделю; при почти пустом дне —
   только «🐱 Ням-Ням: …» без светофора.
+
+## 28. Рефакторинг: диалоговые хелперы из анкеты в `features/dialog/`
+`features/onboarding.ts` (815 строк) — не только анкета: в нём общие примитивы диалогов,
+которые берут `weight.ts`, `workout.ts`, `motivation.ts`. Из-за этого единственный цикл
+импортов в проекте: `mainMenu → history → mealLogging → workout → onboarding → mainMenu`.
+Поведение бота не меняется.
+- [ ] `src/features/dialog/` — `askChoice`, `askNumber`, `haltIfCancelled`
+      (+ `CancelOptions`), `parseNumberText`, `isInRange`, `matchChoiceText`, разбор
+      «кнопка / текст / отмена»; `askMotivation` с его константами
+      (`MOTIVATION_QUESTION`, `MOTIVATION_SKIP_DATA`, `normalizeMotivation`) — в отдельный
+      модуль рядом, он общий для анкеты и `motivation.ts`.
+- [ ] `onboarding.ts` — только анкета (`onboardingConversation`, `registerOnboarding`,
+      шаги и «◀️ Назад»); `weight.ts`, `workout.ts`, `motivation.ts` импортируют из
+      `dialog/`, а не из `onboarding.ts`.
+- [ ] Тесты, которые сейчас проверяют эти функции через `onboarding.test.ts`, переезжают
+      к новым модулям; `CLAUDE.md` — новая папка в структуре кода.
+- **Готово, когда:** `npm run build && npm test` зелёные; в `src/` нет циклов импортов
+  между `features/*` (циклы контракт ↔ реализация в `ai/` — намеренные, их не трогать);
+  `onboarding.ts` заметно короче, вес/тренировка/анкета работают как раньше.
+
+## 29. Рефакторинг: общий тип `Db` и общая обработка ответа ИИ
+Мелкие повторы, которые удобно закрыть одним заходом. Поведение не меняется.
+- [ ] `type Db = BetterSQLite3Database<typeof schema>` объявлен в 25 файлах — один
+      экспорт (например, из `db/client.ts` без побочных эффектов импорта или из
+      `db/types.ts`), остальные файлы импортируют его.
+- [ ] `claude/analyzeFood.ts`, `claude/analyzeMessage.ts` и `commentOnPeriod` в
+      `claude/coach.ts` одинаково ищут `tool_use`, разбирают обрыв по `max_tokens` и
+      отсутствие вызова инструмента — общий хелпер в `claude/client.ts` (например,
+      `requireToolUse(response, toolName, onMissing)`), ошибки остаются прежними
+      (`FoodAnalyzerError` / `CoachError` с теми же текстами).
+- [ ] Убрать неиспользуемый импорт `config` в `features/correction.ts`.
+- **Готово, когда:** `npm run build && npm test` зелёные, существующие тесты
+  `analyzeFood.test.ts`, `analyzeMessage.test.ts`, `coach.test.ts` проходят без правки
+  ожиданий.
+
+## 30. Рефакторинг: разгрузить `features/mealLogging.ts`
+Самый часто меняемый файл (22 коммита): в нём вместе обработчики, скачивание медиа,
+маппинги БД ↔ `FoodItem`, рендер и клавиатуры, а остальные фичи берут оттуда не
+относящиеся к логированию хелперы (`reports.ts` — `MEAL_TYPE_LABEL`, `correction.ts` —
+`downloadPhoto`, коуч — `transcribeVoiceMessage`). Поведение не меняется.
+- [ ] Сначала тесты на `features/correction.ts` (сейчас их нет, а он часто меняется):
+      хотя бы `buildCorrectionPrompt` и `extractPreviousResult`, вынесенные в чистые
+      функции, если ещё не такие.
+- [ ] `utils/telegramMedia.ts` (или похожее имя): `downloadPhoto`, `mimeTypeForFilePath`,
+      `transcribeVoiceMessage` (+ сообщения об ошибках расшифровки).
+- [ ] `features/mealFormat.ts`: `MEAL_TYPE_LABEL`, `buildMealMessage`,
+      `buildStoredMealMessage`, `mealActionsKeyboard`, `toFoodItems`, `toMealItemInputs`.
+- [ ] `mealLogging.ts` — только обработчики фото/текста/голоса и `logDescribedMeal`;
+      `reports.ts` больше не импортирует `mealLogging.ts`. Тесты переезжают вслед за
+      функциями; `CLAUDE.md` — новые модули.
+- **Готово, когда:** `npm run build && npm test` зелёные; фото, альбом, текст, голос,
+  ✏️-правка, 🕐 и удаление записи работают как раньше.
+
+## 31. Рефакторинг: разделить `features/workout.ts` и `features/weight.ts`
+`workout.ts` (520 строк) — разбор `/workout бег 40 мин`, сохранение, рендер, два
+диалога и хендлеры в одном файле; в `weight.ts` вместе с весом живёт выбор уровня
+активности. Поведение не меняется.
+- [ ] Чистая часть тренировок — отдельно от диалогов: `parseWorkoutCommand` и его
+      таблицы — в `features/workoutParse.ts` (или в `nutrition/`), рендер — в
+      существующий `workoutFormat.ts`; сохранение (`saveWorkout`,
+      `saveRecognizedWorkouts`) — рядом с `db/workouts.ts` или отдельным модулем.
+- [ ] Выбор уровня активности (`sendActivityPicker`, `activityKeyboard`,
+      `buildActivityChangedMessage`, `setactivity:`) — из `weight.ts` в
+      `features/activity.ts`.
+- [ ] Тесты переезжают вслед за функциями; `CLAUDE.md` — новые модули.
+- **Готово, когда:** `npm run build && npm test` зелёные; `/workout`, «✏️ Изменить»
+  тренировки, вес числом и «🏃 Активность» в профиле работают как раньше.
