@@ -94,7 +94,7 @@ describe("cron/scheduler runScheduledTasks", () => {
     createUser(db, 2, "bob");
     setUserTimeZone(db, 1, "Europe/Moscow");
     setUserTimeZone(db, 2, "Asia/Yekaterinburg");
-    comment.mockReset().mockResolvedValue("Мур!");
+    comment.mockReset().mockResolvedValue({ verdict: null, summary: "Мур!", advice: null });
     Object.assign(config, {
       eveningSummaryTime: "23:30",
       weeklyReportTime: "21:00",
@@ -199,7 +199,11 @@ describe("cron/scheduler sendEveningSummaries", () => {
     createUser(db, 1, "alice");
     createUser(db, 2, "bob");
     createUser(db, 3, "carol");
-    comment.mockReset().mockResolvedValue("Отличный день, мур!");
+    comment.mockReset().mockResolvedValue({
+      verdict: "green",
+      summary: "Отличный день, мур!",
+      advice: "Завтра добавьте овощей.",
+    });
   });
 
   it("шлёт сводку только пользователям с записями за текущий день", async () => {
@@ -230,8 +234,9 @@ describe("cron/scheduler sendEveningSummaries", () => {
     consoleError.mockRestore();
   });
 
-  it("добавляет комментарий Ням-Ням с данными дня и кнопку «Обсудить»", async () => {
+  it("добавляет оценку рациона от Ням-Ням по составу дня и кнопку «Обсудить»", async () => {
     addMeal(db, 1, new Date("2026-08-23T15:00:00Z"));
+    addMeal(db, 1, new Date("2026-08-22T15:00:00Z")); // вчера — не в оценке
     const sendMessage = vi.fn().mockResolvedValue({});
 
     await sendEveningSummaries({ sendMessage } as never, db, now, msk(1, 2, 3), comment);
@@ -242,7 +247,15 @@ describe("cron/scheduler sendEveningSummaries", () => {
     expect(input.summaries).toHaveLength(1);
     expect(input.summaries[0].date).toBe("2026-08-23");
     expect(input.summaries[0].totals.kcal).toBe(220);
-    expect(sendMessage.mock.calls[0][1]).toContain("🐱 Ням-Ням: Отличный день, мур!");
+    expect(input.mealItems).toHaveLength(1);
+    expect(input.mealItems[0].date).toBe("2026-08-23");
+    expect(input.mealItems[0].meals).toHaveLength(1);
+    expect(input.mealItems[0].meals[0].items).toEqual([
+      { name: "гречка", weightG: 200, kcal: 220, proteinG: 6.5, fatG: 2.1, carbG: 41.3 },
+    ]);
+    expect(sendMessage.mock.calls[0][1]).toContain(
+      "\n\n🟢 Ням-Ням: Отличный день, мур!\n💡 Завтра добавьте овощей.",
+    );
     expect(JSON.stringify(sendMessage.mock.calls[0][2])).toContain("coach:discuss");
   });
 
@@ -291,7 +304,11 @@ describe("cron/scheduler sendWeeklyReports", () => {
     db = makeDb();
     createUser(db, 1, "alice");
     createUser(db, 2, "bob");
-    comment.mockReset().mockResolvedValue("Хорошая неделя!");
+    comment.mockReset().mockResolvedValue({
+      verdict: "yellow",
+      summary: "Хорошая неделя!",
+      advice: null,
+    });
   });
 
   it("шлёт отчёт только пользователям с записями за неделю, с весом и комментарием", async () => {
@@ -310,7 +327,8 @@ describe("cron/scheduler sendWeeklyReports", () => {
     expect(text).toContain("📊 Неделя 17.08–23.08");
     expect(text).toContain("Дней с записями: 2 из 7");
     expect(text).toContain("⚖️ Вес: 80 → 79.4 кг (−0.6 кг)");
-    expect(text).toContain("🐱 Ням-Ням: Хорошая неделя!");
+    expect(text).toContain("🟡 Ням-Ням: Хорошая неделя!");
+    expect(text).not.toContain("💡");
 
     const input = comment.mock.calls[0][0];
     expect(input.kind).toBe("week");
@@ -323,5 +341,12 @@ describe("cron/scheduler sendWeeklyReports", () => {
       "2026-08-22",
       "2026-08-23",
     ]);
+    // Состав — за каждый день недели, в том числе пустые.
+    expect(input.mealItems.map((d: { date: string }) => d.date)).toEqual(
+      input.summaries.map((d: { date: string }) => d.date),
+    );
+    const mealCounts = input.mealItems.map((d: { meals: unknown[] }) => d.meals.length);
+    expect(mealCounts).toEqual([1, 0, 0, 1, 0, 0, 0]);
+    expect(input.mealItems[3].meals[0].items[0].name).toBe("гречка");
   });
 });

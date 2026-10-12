@@ -6,24 +6,30 @@ import {
   type CoachDataSource,
   type CoachReply,
   type CommentOnPeriodInput,
+  type PeriodComment,
 } from "../ai/coach.js";
 import { trimToLastSentence } from "../utils/text.js";
 import { classifyApiError, getClient, THINKING_DISABLED } from "./client.js";
 import {
+  ASSESS_DIET_TOOL,
   buildCommentRequest,
   buildContextBlock,
   buildSnapshotBlock,
   COACH_SYSTEM_PROMPT,
   COACH_TOOLS,
   COMMENT_SYSTEM_PROMPT,
+  DIET_VERDICTS,
   OFFER_DIARY_ENTRY_TOOL,
 } from "./coachPrompts.js";
 
 // Лимиты токенов держат ответ заведомо короче лимита сообщения Telegram (4096):
 // кириллица — примерно 2.5–3 символа на токен.
 const CHAT_MAX_TOKENS = 700;
-const COMMENT_MAX_TOKENS = 250;
+// Оценка к отчёту — аргументы инструмента: JSON с русским текстом длиннее простого ответа.
+const COMMENT_MAX_TOKENS = 600;
 const MAX_REPLY_CHARS = 4000;
+// Страховка, если модель не уложилась в лимиты из промпта (200 и 160 символов).
+const MAX_COMMENT_PART_CHARS = 400;
 const MAX_TOOL_ROUNDS = 5;
 
 export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
@@ -74,15 +80,52 @@ export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
   );
 }
 
-export async function commentOnPeriod(input: CommentOnPeriodInput): Promise<string> {
+export async function commentOnPeriod(input: CommentOnPeriodInput): Promise<PeriodComment> {
   const response = await createMessage({
     max_tokens: COMMENT_MAX_TOKENS,
     system: COMMENT_SYSTEM_PROMPT,
-    messages: [
-      { role: "user", content: buildCommentRequest(input.kind, input.snapshot, input.summaries) },
-    ],
+    tools: [ASSESS_DIET_TOOL],
+    tool_choice: { type: "tool", name: ASSESS_DIET_TOOL.name },
+    messages: [{ role: "user", content: buildCommentRequest(input) }],
   });
-  return finalizeText(response);
+
+  const toolUse = response.content.find(
+    (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
+  );
+  // Оборванный по max_tokens вызов — аргументы могут быть неполными: отчёт уйдёт без оценки.
+  if (!toolUse || response.stop_reason === "max_tokens") throw assessmentError();
+  return toPeriodComment(toolUse.input as AssessDietToolInput);
+}
+
+interface AssessDietToolInput {
+  verdict?: unknown;
+  summary?: unknown;
+  advice?: unknown;
+}
+
+function toPeriodComment(raw: AssessDietToolInput): PeriodComment {
+  const summary = commentPart(raw.summary);
+  if (!summary) throw assessmentError();
+  return {
+    verdict: DIET_VERDICTS.find((verdict) => verdict === raw.verdict) ?? null,
+    summary,
+    advice: commentPart(raw.advice) || null,
+  };
+}
+
+// Короткий текст — как есть: trimToLastSentence без превышения длины «дорезал» бы
+// фразу без точки в конце как оборванную.
+function commentPart(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text.length > MAX_COMMENT_PART_CHARS
+    ? trimToLastSentence(text, MAX_COMMENT_PART_CHARS)
+    : text;
+}
+
+function assessmentError(): CoachError {
+  return new CoachError("🐱 Не получилось оценить рацион. Попробуйте ещё раз.", {
+    retryable: true,
+  });
 }
 
 async function createMessage(

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildTodayReport, buildWeeklyReport, EMPTY_TODAY_HINT } from "./reports.js";
+import {
+  buildTodayReport,
+  buildWeeklyReport,
+  EMPTY_TODAY_HINT,
+  formatPeriodComment,
+} from "./reports.js";
 import type { DaySummary } from "../ai/coach.js";
 import type { MealRow } from "../db/meals.js";
 import type { WorkoutEntry } from "../db/workouts.js";
@@ -249,5 +254,28 @@ describe("features/reports buildWeeklyReport", () => {
     const text = buildWeeklyReport(days, undefined, [{ weightKg: 80 }]);
     expect(text).not.toContain("Норма");
     expect(text).toContain("⚖️ Вес: 80 кг (одна запись за неделю)");
+  });
+});
+
+describe("features/reports formatPeriodComment", () => {
+  it("показывает светофор, оценку и совет", () => {
+    expect(
+      formatPeriodComment({
+        verdict: "green",
+        summary: "Белок в каждом приёме и много овощей.",
+        advice: "Завтра замените печенье на йогурт с ягодами.",
+      }),
+    ).toBe(
+      "🟢 Ням-Ням: Белок в каждом приёме и много овощей.\n" +
+        "💡 Завтра замените печенье на йогурт с ягодами.",
+    );
+    expect(formatPeriodComment({ verdict: "yellow", summary: "А", advice: "Б" })).toMatch(/^🟡 /);
+    expect(formatPeriodComment({ verdict: "red", summary: "А", advice: "Б" })).toMatch(/^🔴 /);
+  });
+
+  it("без светофора — кошечка, без совета — без строки 💡", () => {
+    expect(
+      formatPeriodComment({ verdict: null, summary: "Записей пока мало.", advice: null }),
+    ).toBe("🐱 Ням-Ням: Записей пока мало.");
   });
 });

@@ -127,6 +127,20 @@ export interface CommentOnPeriodInput {
   kind: PeriodKind;
   snapshot: CoachSnapshot;
   summaries: DaySummary[];
+  // Состав приёмов пищи по дням периода: оценка смотрит, что именно съедено, а у
+  // текстовых записей description — это сырой текст пользователя.
+  mealItems: DayMealItems[];
+}
+
+// Светофор качества рациона: green — разнообразно и сбалансированно, yellow — есть
+// заметный пробел, red — явный перекос.
+export type DietVerdict = "green" | "yellow" | "red";
+
+// Оценка Ням-Ням к отчёту за период — что человек ел, а не только сколько.
+export interface PeriodComment {
+  verdict: DietVerdict | null; // null — записей мало для оценки
+  summary: string; // главное о составе рациона, начиная с хорошего
+  advice: string | null; // один совет на завтра / на следующую неделю
 }
 
 export interface CoachReply {
@@ -137,7 +151,7 @@ export interface CoachReply {
 }
 
 export type AskCoach = (input: AskCoachInput) => Promise<CoachReply>;
-export type CommentOnPeriod = (input: CommentOnPeriodInput) => Promise<string>;
+export type CommentOnPeriod = (input: CommentOnPeriodInput) => Promise<PeriodComment>;
 
 // Как FoodAnalyzerError: текст для пользователя уже готов на русском.
 export class CoachError extends Error {

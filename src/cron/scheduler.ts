@@ -3,7 +3,12 @@ import type { Api } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import { config } from "../config.js";
-import { commentOnPeriod, type CommentOnPeriod, type PeriodKind } from "../ai/coach.js";
+import {
+  commentOnPeriod,
+  type CommentOnPeriod,
+  type PeriodComment,
+  type PeriodKind,
+} from "../ai/coach.js";
 import { getMealsForUserOnDate } from "../db/meals.js";
 import { getProfileByUserId } from "../db/profiles.js";
 import { getLastReminderAt, recordReminder } from "../db/reminders.js";
@@ -13,7 +18,11 @@ import { getWorkoutsBetween } from "../db/workouts.js";
 import { coachDiscussKeyboard } from "../features/coach/coach.js";
 import { sendMealReminders, sendWeightReminders } from "./reminders.js";
 import { createCoachDataSource } from "../features/coach/dataSource.js";
-import { buildTodayReport, buildWeeklyReport } from "../features/reports.js";
+import {
+  buildTodayReport,
+  buildWeeklyReport,
+  formatPeriodComment,
+} from "../features/reports.js";
 import {
   formatYmd,
   getTodayBoundsUtc,
@@ -83,14 +92,14 @@ function usersDueAt(
   });
 }
 
-// Комментарий Ням-Ням к отчёту. Если ИИ недоступен — отчёт уходит без комментария.
+// Оценка рациона от Ням-Ням под отчётом. Если ИИ недоступен — отчёт уходит без неё.
 async function withCoachComment(
   report: string,
-  makeComment: () => Promise<string>,
+  makeComment: () => Promise<PeriodComment>,
   userId: number,
 ): Promise<string> {
   try {
-    return `${report}\n\n🐱 Ням-Ням: ${await makeComment()}`;
+    return `${report}\n\n${formatPeriodComment(await makeComment())}`;
   } catch (err) {
     console.error(`Не удалось получить комментарий коуча для пользователя ${userId}:`, err);
     return report;
@@ -138,8 +147,14 @@ export async function sendEveningSummaries(
     const text = await withCoachComment(
       report,
       () => {
-        const snapshot = createCoachDataSource(db, userId, timeZone, () => now).getSnapshot();
-        return comment({ kind: "day", snapshot, summaries: [snapshot.today] });
+        const dataSource = createCoachDataSource(db, userId, timeZone, () => now);
+        const snapshot = dataSource.getSnapshot();
+        return comment({
+          kind: "day",
+          snapshot,
+          summaries: [snapshot.today],
+          mealItems: [dataSource.getMealItems(snapshot.today.date)],
+        });
       },
       userId,
     );
@@ -170,7 +185,13 @@ export async function sendWeeklyReports(
 
     const text = await withCoachComment(
       report,
-      () => comment({ kind: "week", snapshot: dataSource.getSnapshot(), summaries: days }),
+      () =>
+        comment({
+          kind: "week",
+          snapshot: dataSource.getSnapshot(),
+          summaries: days,
+          mealItems: days.map((day) => dataSource.getMealItems(day.date)),
+        }),
       userId,
     );
     await sendReport(api, userId, text, "week");

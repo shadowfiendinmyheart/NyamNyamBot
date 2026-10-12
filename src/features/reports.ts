@@ -1,5 +1,5 @@
 import { sumNutrition, type MealRow } from "../db/meals.js";
-import type { DaySummary } from "../ai/coach.js";
+import type { DaySummary, DietVerdict, PeriodComment } from "../ai/coach.js";
 import type { WeightLogRow } from "../db/weightLog.js";
 import { sumBurnedKcal, type WorkoutEntry } from "../db/workouts.js";
 import {
@@ -112,6 +112,20 @@ export function buildTodayReport(
   }
 
   return parts.join("\n");
+}
+
+const VERDICT_EMOJI: Record<DietVerdict, string> = {
+  green: "🟢",
+  yellow: "🟡",
+  red: "🔴",
+};
+
+// Оценка Ням-Ням под сводкой и недельным отчётом: светофор по составу рациона и совет.
+// Без светофора — записей было мало для оценки.
+export function formatPeriodComment(comment: PeriodComment): string {
+  const icon = comment.verdict ? VERDICT_EMOJI[comment.verdict] : "🐱";
+  const head = `${icon} Ням-Ням: ${comment.summary}`;
+  return comment.advice ? `${head}\n💡 ${comment.advice}` : head;
 }
 
 const WEEKDAY_SHORT = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];

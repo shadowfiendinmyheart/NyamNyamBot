@@ -265,28 +265,120 @@ describe("claude/coach commentOnPeriod", () => {
     createMock.mockReset();
   });
 
-  it("делает один вызов без инструментов с данными периода", async () => {
-    createMock.mockResolvedValue(textResponse("Неплохо, мур!"));
+  const meal = {
+    time: "13:00",
+    mealType: "lunch" as const,
+    description: "обед",
+    kcal: 450,
+    proteinG: 31,
+    fatG: 12,
+    carbG: 44,
+  };
+  const day = {
+    ...snapshot.today,
+    totals: { kcal: 450, proteinG: 31, fatG: 12, carbG: 44 },
+    meals: [meal],
+  };
+  const dayInput = {
+    kind: "day" as const,
+    snapshot,
+    summaries: [day],
+    mealItems: [
+      {
+        date: "2026-08-23",
+        meals: [
+          {
+            ...meal,
+            items: [
+              { name: "гречка", weightG: 200, kcal: 220, proteinG: 8, fatG: 2, carbG: 42 },
+              { name: "котлета куриная", weightG: 120, kcal: 230, proteinG: 23, fatG: 10, carbG: 2 },
+            ],
+          },
+        ],
+      },
+    ],
+  };
 
-    const comment = await commentOnPeriod({
-      kind: "week",
-      snapshot,
-      summaries: [snapshot.today],
+  function assessResponse(input: unknown, stopReason = "tool_use") {
+    return { ...toolResponse("assess_diet", input), stop_reason: stopReason };
+  }
+
+  it("оценивает рацион одним вызовом инструмента assess_diet по составу приёмов пищи", async () => {
+    createMock.mockResolvedValue(
+      assessResponse({
+        verdict: "green",
+        summary: "Белок и сложные углеводы в обед.",
+        advice: "Добавьте овощей к ужину",
+      }),
+    );
+
+    const comment = await commentOnPeriod(dayInput);
+
+    expect(comment).toEqual({
+      verdict: "green",
+      summary: "Белок и сложные углеводы в обед.",
+      advice: "Добавьте овощей к ужину",
     });
-
-    expect(comment).toBe("Неплохо, мур!");
     const call = createMock.mock.calls[0][0];
-    expect(call.tools).toBeUndefined();
-    expect(call.max_tokens).toBe(250);
-    expect(call.messages[0].content).toContain("итогам этой недели");
-    expect(call.messages[0].content).toContain('"date":"2026-08-23"');
+    expect(call.tools.map((tool: { name: string }) => tool.name)).toEqual(["assess_diet"]);
+    expect(call.tool_choice).toEqual({ type: "tool", name: "assess_diet" });
+    expect(call.max_tokens).toBe(600);
+    expect(call.thinking).toEqual({ type: "disabled" });
+    const content: string = call.messages[0].content;
+    expect(content).toContain("рацион за сегодня");
+    expect(content).toContain('"date":"2026-08-23"');
+    // Состав приёма пищи — вместо одного описания.
+    expect(content).toContain('"name":"котлета куриная"');
+    expect(content).toContain('"weightG":200');
   });
 
-  it("оборванный пустой комментарий — ошибка, чтобы отчёт ушёл без него", async () => {
-    createMock.mockResolvedValue(textResponse("", "max_tokens"));
+  it("недельная оценка просит оценить неделю", async () => {
+    createMock.mockResolvedValue(assessResponse({ verdict: "yellow", summary: "Неплохо." }));
 
-    await expect(
-      commentOnPeriod({ kind: "day", snapshot, summaries: [snapshot.today] }),
-    ).rejects.toBeInstanceOf(CoachError);
+    await commentOnPeriod({ ...dayInput, kind: "week" });
+
+    expect(createMock.mock.calls[0][0].messages[0].content).toContain("рацион за эту неделю");
+  });
+
+  it("без светофора и совета — verdict и advice null, неизвестный светофор тоже null", async () => {
+    createMock.mockResolvedValueOnce(
+      assessResponse({ summary: "Пока мало записей — точнее оценю завтра." }),
+    );
+    createMock.mockResolvedValueOnce(
+      assessResponse({ verdict: "purple", summary: "Разнообразно.", advice: "  " }),
+    );
+
+    expect(await commentOnPeriod(dayInput)).toEqual({
+      verdict: null,
+      summary: "Пока мало записей — точнее оценю завтра.",
+      advice: null,
+    });
+    expect(await commentOnPeriod(dayInput)).toEqual({
+      verdict: null,
+      summary: "Разнообразно.",
+      advice: null,
+    });
+  });
+
+  it("слишком длинный текст обрезается по границе предложения", async () => {
+    const summary = `${"Первое предложение про обед. ".repeat(20)}Хвост`;
+    createMock.mockResolvedValue(assessResponse({ verdict: "green", summary }));
+
+    const comment = await commentOnPeriod(dayInput);
+
+    expect(comment.summary.length).toBeLessThanOrEqual(400);
+    expect(comment.summary.endsWith("Первое предложение про обед.")).toBe(true);
+  });
+
+  it("пустая или оборванная оценка — ошибка, чтобы отчёт ушёл без неё", async () => {
+    createMock.mockResolvedValueOnce(assessResponse({ verdict: "green", summary: " " }));
+    createMock.mockResolvedValueOnce(
+      assessResponse({ verdict: "green", summary: "Хорошо" }, "max_tokens"),
+    );
+    createMock.mockResolvedValueOnce(textResponse("Неплохо, мур!"));
+
+    for (let i = 0; i < 3; i++) {
+      await expect(commentOnPeriod(dayInput)).rejects.toBeInstanceOf(CoachError);
+    }
   });
 });
