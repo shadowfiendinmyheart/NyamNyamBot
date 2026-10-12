@@ -2,7 +2,8 @@
 
 Делать по порядку, каждый тикет — отдельная итерация (отдельный чат с ИИ или отдельный
 коммит). Полная архитектура — в `CLAUDE.md` и в
-`/Users/garfield/.claude/plans/merry-hugging-kahn.md`.
+`/Users/garfield/.claude/plans/merry-hugging-kahn.md`. Идеи, которые ещё не стали
+тикетами, — в [IDEAS.md](IDEAS.md).
 
 ## MVP-скоуп
 
