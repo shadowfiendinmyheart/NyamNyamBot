@@ -210,6 +210,38 @@ describe("claude/analyzeFood", () => {
     expect(String((err as Error).cause)).toContain(logged);
   });
 
+  it("repeats the request with tool_choice auto when the model rejects a forced tool_choice", async () => {
+    createMock
+      .mockResolvedValueOnce({
+        type: "error",
+        error: {
+          type: "invalid_request_error",
+          message: 'tool_choice: type "tool" and "any" are not supported for this model.',
+        },
+      })
+      .mockResolvedValueOnce(toolUseResponse({ food_detected: true, items: [] }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await analyzeFood({ text: "гречка" });
+
+    expect(result.foodDetected).toBe(true);
+    const retry = createMock.mock.calls[1][0];
+    expect(retry.tool_choice).toEqual({ type: "auto" });
+    expect(retry.system.at(-1).text).toContain("analyze_food");
+  });
+
+  it("does not call a request rejected by the service a temporary overload", async () => {
+    createMock.mockResolvedValue({
+      type: "error",
+      error: { type: "invalid_request_error", message: "max_tokens: too large" },
+    });
+
+    const err = await analyzeFood({ text: "гречка" }).catch((e: unknown) => e);
+
+    expect(err).toMatchObject({ name: "FoodAnalyzerError", retryable: false });
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
   it("turns an unparsable JSON body returned with 200 into a retryable error", async () => {
     createMock.mockRejectedValue(new SyntaxError("Unexpected end of JSON input"));
 
