@@ -4,6 +4,9 @@ import {
   calculateDailyTargets,
   calculateWorkoutKcal,
   dayKcalTarget,
+  kcalMatchesMacros,
+  per100gNutrition,
+  portionNutrition,
   rescaleWorkoutKcal,
   workoutKcalBonus,
   type ProfileInput,
@@ -142,5 +145,35 @@ describe("rescaleWorkoutKcal", () => {
     expect(rescaleWorkoutKcal(441, from, { ...from, intensity: "high" })).toBe(
       calculateWorkoutKcal({ ...from, intensity: "high", weightKg: 90 }),
     );
+  });
+});
+
+describe("portionNutrition / per100gNutrition", () => {
+  const yogurt = { kcal: 63, proteinG: 8.7, fatG: 2, carbG: 2.5 };
+
+  it("КБЖУ порции — на 100 г × вес / 100 с округлением", () => {
+    expect(portionNutrition(yogurt, 116)).toEqual({ kcal: 73, proteinG: 10.1, fatG: 2.3, carbG: 2.9 });
+    expect(portionNutrition(yogurt, 0)).toEqual({ kcal: 0, proteinG: 0, fatG: 0, carbG: 0 });
+  });
+
+  it("обратный пересчёт на 100 г; нулевой вес — нули", () => {
+    expect(per100gNutrition({ kcal: 500, proteinG: 20, fatG: 25, carbG: 50 }, 200)).toEqual({
+      kcal: 250,
+      proteinG: 10,
+      fatG: 12.5,
+      carbG: 25,
+    });
+    expect(per100gNutrition({ kcal: 5, proteinG: 0, fatG: 0, carbG: 1 }, 0)).toEqual({
+      kcal: 0,
+      proteinG: 0,
+      fatG: 0,
+      carbG: 0,
+    });
+  });
+
+  it("сверка ккал с БЖУ: допуск 25%, почти пустые продукты не проверяются", () => {
+    expect(kcalMatchesMacros(yogurt)).toBe(true);
+    expect(kcalMatchesMacros({ kcal: 120, proteinG: 8.7, fatG: 2, carbG: 2.5 })).toBe(false);
+    expect(kcalMatchesMacros({ kcal: 2, proteinG: 0.2, fatG: 0, carbG: 0.3 })).toBe(true);
   });
 });

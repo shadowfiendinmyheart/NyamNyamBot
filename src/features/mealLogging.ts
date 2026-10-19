@@ -28,6 +28,7 @@ import { determineMealType, formatMealDay, resolveMealTime } from "../utils/meal
 import { MediaGroupBuffer } from "../utils/mediaGroupBuffer.js";
 import { downloadTelegramFile } from "../utils/telegram.js";
 import { withChatAction } from "../utils/chatAction.js";
+import { per100gNutrition } from "../nutrition/calculations.js";
 import { buildDayProgressLine } from "./dayProgress.js";
 import { deleteMealWithUndo, deletedEntries, undoDeleteKeyboard } from "./deletedEntries.js";
 import { shortLabel } from "../utils/text.js";
@@ -93,6 +94,19 @@ export function buildMealMessage(
   }
 
   return parts.join("\n");
+}
+
+// КБЖУ на 100 г продуктов записи — контекст для правки в разговоре с Ням-Ням: модель
+// переносит нетронутые продукты как есть, не пересчитывая их из порции.
+export function buildPer100gBlock(items: FoodItem[]): string {
+  const lines = items.map((item) => {
+    const per100g = per100gNutrition(item, item.estimatedWeightG);
+    return (
+      `• ${item.name}: ${per100g.kcal} ккал ` +
+      `(Б ${per100g.proteinG} / Ж ${per100g.fatG} / У ${per100g.carbG})`
+    );
+  });
+  return ["На 100 г:", ...lines].join("\n");
 }
 
 // Сообщение для сохранённой записи — сразу после записи, после смены времени или правки.

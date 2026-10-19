@@ -146,6 +146,59 @@ export function rescaleWorkoutKcal(
   return Math.round((kcalBurned * load(to)) / load(from));
 }
 
+export interface Nutrition {
+  kcal: number;
+  proteinG: number;
+  fatG: number;
+  carbG: number;
+}
+
+// Ккал на 100 г, расходящиеся с Б×4 + Ж×9 + У×4 сильнее этой доли, — повод проверить
+// оценку. Ккал не пересчитываются: у алкоголя (7 ккал/г) расхождение законное.
+const KCAL_MISMATCH_SHARE = 0.25;
+// Ниже — почти пустые продукты (чай, вода, специи): там относительное расхождение
+// ничего не значит.
+const KCAL_MISMATCH_MIN_KCAL = 30;
+
+export function macroKcal({ proteinG, fatG, carbG }: Omit<Nutrition, "kcal">): number {
+  return proteinG * 4 + fatG * 9 + carbG * 4;
+}
+
+export function kcalMatchesMacros(per100g: Nutrition): boolean {
+  const fromMacros = macroKcal(per100g);
+  if (Math.max(per100g.kcal, fromMacros) < KCAL_MISMATCH_MIN_KCAL) return true;
+  return Math.abs(per100g.kcal - fromMacros) <= KCAL_MISMATCH_SHARE * Math.max(per100g.kcal, fromMacros);
+}
+
+// КБЖУ порции из КБЖУ на 100 г: целые ккал, БЖУ с одним знаком после запятой.
+export function portionNutrition(per100g: Nutrition, weightG: number, label = ""): Nutrition {
+  if (!kcalMatchesMacros(per100g)) {
+    console.warn(
+      `portionNutrition: ккал не сходятся с БЖУ${label ? ` у «${label}»` : ""}: ` +
+        `${per100g.kcal} ккал при Б×4 + Ж×9 + У×4 = ${Math.round(macroKcal(per100g))} на 100 г`,
+    );
+  }
+  const scale = weightG / 100;
+  return {
+    kcal: Math.round(per100g.kcal * scale),
+    proteinG: roundToOneDecimal(per100g.proteinG * scale),
+    fatG: roundToOneDecimal(per100g.fatG * scale),
+    carbG: roundToOneDecimal(per100g.carbG * scale),
+  };
+}
+
+// Обратно: КБЖУ на 100 г из сохранённой порции (для правки записи в разговоре с Ням-Ням).
+export function per100gNutrition(portion: Nutrition, weightG: number): Nutrition {
+  if (weightG <= 0) return { kcal: 0, proteinG: 0, fatG: 0, carbG: 0 };
+  const scale = 100 / weightG;
+  return {
+    kcal: Math.round(portion.kcal * scale),
+    proteinG: roundToOneDecimal(portion.proteinG * scale),
+    fatG: roundToOneDecimal(portion.fatG * scale),
+    carbG: roundToOneDecimal(portion.carbG * scale),
+  };
+}
+
 function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }

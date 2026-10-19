@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { CoachSnapshot, CommentOnPeriodInput, DietVerdict } from "../ai/coach.js";
 import { MAX_SUMMARY_DAYS } from "../ai/coachLimits.js";
-import { FOOD_ANALYSIS_TOOL, FOOD_ESTIMATION_RULES } from "./prompts.js";
+import { FOOD_ESTIMATION_RULES, FOOD_ITEM_SCHEMA } from "./prompts.js";
 
 const PERSONA = `Ты — Ням-Ням, кошечка-маскот Telegram-бота для подсчёта калорий и личный коуч
 пользователя. Ты совмещаешь четыре роли и сама выбираешь нужную по вопросу:
@@ -206,8 +206,8 @@ ${entry}
 - Если пользователь сообщает факт об этой еде, который меняет оценку (другой вес
   порции, другой продукт, чего-то не было, «ещё был соус»), — вызови ${CORRECT_MEAL_TOOL}
   с ПОЛНЫМ новым составом: все продукты записи с учётом правки, а не только изменённые.
-  Бот сохранит его и покажет обновлённую запись; в ответе коротко скажи, что поправила
-  и как изменились калории.
+  Бот сохранит его и покажет обновлённую запись с калориями; в ответе коротко скажи,
+  что поправила.
 - Вопросы, сомнения и предположения («это много?», «а если бы порция была 200 г?»)
   запись не меняют — просто ответь.
 - В одном сообщении может быть и правка, и вопрос («было 200 г, это много?») — сделай
@@ -219,7 +219,8 @@ ${entry}
 
 Как оценивать продукты при правке:
 ${FOOD_ESTIMATION_RULES}
-- Ккал — целые, белки, жиры и углеводы — с одним знаком после запятой.`;
+- У продуктов, которые правка не задела, вес и КБЖУ на 100 г бери из записи как есть
+  (блок «На 100 г» под ней).`;
 }
 
 export const OFFER_DIARY_ENTRY_TOOL = "offer_diary_entry";
@@ -236,7 +237,7 @@ export const CORRECT_MEAL_TOOL_DEFINITION: Anthropic.Tool = {
   input_schema: {
     type: "object",
     properties: {
-      items: (FOOD_ANALYSIS_TOOL.input_schema.properties as Record<string, unknown>).items,
+      items: { type: "array", items: FOOD_ITEM_SCHEMA },
     },
     required: ["items"],
   },

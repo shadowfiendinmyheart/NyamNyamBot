@@ -2,15 +2,18 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { classifyApiError, createMessage } from "./client.js";
 import { FoodAnalyzerError } from "../ai/foodAnalyzer.js";
 import type { AnalyzeFoodInput, AnalyzeFoodResult, FoodItem } from "../ai/foodAnalyzer.js";
+import { portionNutrition } from "../nutrition/calculations.js";
 import { FOOD_ANALYSIS_TOOL, SYSTEM_PROMPT } from "./prompts.js";
 
 export interface AnalyzeFoodToolItem {
   name: string;
   estimated_weight_g: number;
-  kcal: number;
-  protein_g: number;
-  fat_g: number;
-  carb_g: number;
+  kcal_100g: number;
+  protein_100g: number;
+  fat_100g: number;
+  carb_100g: number;
+  brand?: string;
+  search_query?: string;
 }
 
 interface AnalyzeFoodToolInput {
@@ -71,32 +74,37 @@ function mapToolInput(raw: AnalyzeFoodToolInput): AnalyzeFoodResult {
   };
 }
 
+// Модель отдаёт КБЖУ на 100 г, порцию по весу считает бот (portionNutrition).
 export function mapItem(item: AnalyzeFoodToolItem): FoodItem {
+  const per100g = {
+    kcal: item.kcal_100g,
+    proteinG: item.protein_100g,
+    fatG: item.fat_100g,
+    carbG: item.carb_100g,
+  };
   if (
     typeof item.name !== "string" ||
     !Number.isFinite(item.estimated_weight_g) ||
-    !Number.isFinite(item.kcal) ||
-    !Number.isFinite(item.protein_g) ||
-    !Number.isFinite(item.fat_g) ||
-    !Number.isFinite(item.carb_g)
+    item.estimated_weight_g < 0 ||
+    !Object.values(per100g).every((value) => Number.isFinite(value) && value >= 0)
   ) {
     throw new Error(
       `analyzeFood: Claude вернул некорректный продукт: ${JSON.stringify(item)}`,
     );
   }
 
+  const brand = nonEmptyString(item.brand);
+  const searchQuery = nonEmptyString(item.search_query);
   return {
     name: item.name,
     estimatedWeightG: item.estimated_weight_g,
-    kcal: Math.round(item.kcal),
-    proteinG: roundToOneDecimal(item.protein_g),
-    fatG: roundToOneDecimal(item.fat_g),
-    carbG: roundToOneDecimal(item.carb_g),
+    ...portionNutrition(per100g, item.estimated_weight_g, item.name),
+    ...(brand ? { brand, searchQuery: searchQuery ?? `${brand} ${item.name}` } : {}),
   };
 }
 
-function roundToOneDecimal(value: number): number {
-  return Math.round(value * 10) / 10;
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 // Что распознавали — от этого зависит, что предложить отправить заново: фото еды или

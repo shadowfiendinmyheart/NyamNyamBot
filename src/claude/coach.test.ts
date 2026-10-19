@@ -189,10 +189,10 @@ describe("claude/coach askCoach", () => {
   const correctedItem = {
     name: "пельмени",
     estimated_weight_g: 200,
-    kcal: 500.4,
-    protein_g: 20.04,
-    fat_g: 25,
-    carb_g: 50,
+    kcal_100g: 250.2,
+    protein_100g: 10.02,
+    fat_100g: 12.5,
+    carb_100g: 25,
   };
 
   it("разговор о записи: правка и ответ приходят одним запросом", async () => {

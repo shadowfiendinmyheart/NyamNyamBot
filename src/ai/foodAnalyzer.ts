@@ -18,6 +18,10 @@ export interface FoodItem {
   proteinG: number;
   fatG: number;
   carbG: number;
+  // Производитель и запрос для поиска продукта в базе (только у продуктов с брендом) —
+  // по ним уточняются КБЖУ на 100 г. В БД не хранятся.
+  brand?: string;
+  searchQuery?: string;
 }
 
 export interface AnalyzeFoodResult {

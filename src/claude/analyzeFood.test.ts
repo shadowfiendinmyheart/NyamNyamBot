@@ -98,10 +98,10 @@ describe("claude/analyzeFood", () => {
           {
             name: "гречка",
             estimated_weight_g: 200,
-            kcal: 220,
-            protein_g: 6.5,
-            fat_g: 2.1,
-            carb_g: 41.3,
+            kcal_100g: 110,
+            protein_100g: 3.25,
+            fat_100g: 1.05,
+            carb_100g: 20.65,
           },
         ],
         notes: "вес приблизительный",
@@ -126,33 +126,108 @@ describe("claude/analyzeFood", () => {
     });
   });
 
-  it("rounds kcal to an integer and macros to one decimal place", async () => {
+  it("считает порцию из КБЖУ на 100 г: целые ккал, БЖУ с одним знаком", async () => {
     createMock.mockResolvedValue(
       toolUseResponse({
         food_detected: true,
         items: [
           {
-            name: "курица",
-            estimated_weight_g: 150,
-            kcal: 217.6,
-            protein_g: 6.53,
-            fat_g: 2.149,
-            carb_g: 41.35,
+            name: "йогурт греческий",
+            estimated_weight_g: 116,
+            kcal_100g: 63,
+            protein_100g: 8.7,
+            fat_100g: 2,
+            carb_100g: 2.5,
           },
         ],
       }),
     );
 
-    const result = await analyzeFood({ text: "курица 150г" });
+    const result = await analyzeFood({ text: "греческий йогурт 116 г" });
 
     expect(result.items[0]).toEqual({
-      name: "курица",
-      estimatedWeightG: 150,
-      kcal: 218,
-      proteinG: 6.5,
-      fatG: 2.1,
-      carbG: 41.4,
+      name: "йогурт греческий",
+      estimatedWeightG: 116,
+      kcal: 73,
+      proteinG: 10.1,
+      fatG: 2.3,
+      carbG: 2.9,
     });
+  });
+
+  it("передаёт бренд и запрос для поиска; без запроса — бренд и название", async () => {
+    const per100g = { kcal_100g: 63, protein_100g: 8.7, fat_100g: 2, carb_100g: 2.5 };
+    createMock.mockResolvedValue(
+      toolUseResponse({
+        food_detected: true,
+        items: [
+          {
+            name: "греческий йогурт",
+            estimated_weight_g: 100,
+            ...per100g,
+            brand: " Простоквашино ",
+            search_query: "Простоквашино йогурт греческий",
+          },
+          { name: "творог", estimated_weight_g: 100, ...per100g, brand: "Светаево" },
+          { name: "домашний суп", estimated_weight_g: 100, ...per100g, brand: "  " },
+        ],
+      }),
+    );
+
+    const { items } = await analyzeFood({ text: "йогурт, творог, суп" });
+
+    expect(items[0]).toMatchObject({
+      brand: "Простоквашино",
+      searchQuery: "Простоквашино йогурт греческий",
+    });
+    expect(items[1]).toMatchObject({ brand: "Светаево", searchQuery: "Светаево творог" });
+    expect(items[2]).not.toHaveProperty("brand");
+    expect(items[2]).not.toHaveProperty("searchQuery");
+  });
+
+  it("ккал, не сходящиеся с БЖУ, не пересчитывает (у алкоголя так и есть)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    createMock.mockResolvedValue(
+      toolUseResponse({
+        food_detected: true,
+        items: [
+          {
+            name: "водка",
+            estimated_weight_g: 50,
+            kcal_100g: 235,
+            protein_100g: 0,
+            fat_100g: 0,
+            carb_100g: 0.1,
+          },
+        ],
+      }),
+    );
+
+    const result = await analyzeFood({ text: "водка 50 г" });
+
+    expect(result.items[0].kcal).toBe(118);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("не сходятся с БЖУ у «водка»"));
+    warn.mockRestore();
+  });
+
+  it("отвергает отрицательные значения", async () => {
+    createMock.mockResolvedValue(
+      toolUseResponse({
+        food_detected: true,
+        items: [
+          {
+            name: "гречка",
+            estimated_weight_g: 100,
+            kcal_100g: -110,
+            protein_100g: 3,
+            fat_100g: 1,
+            carb_100g: 20,
+          },
+        ],
+      }),
+    );
+
+    await expect(analyzeFood({ text: "гречка" })).rejects.toThrow(/некорректный продукт/);
   });
 
   it("throws when a returned item has a non-numeric field", async () => {
@@ -163,10 +238,10 @@ describe("claude/analyzeFood", () => {
           {
             name: "неизвестно",
             estimated_weight_g: 100,
-            kcal: Number.NaN,
-            protein_g: 1,
-            fat_g: 1,
-            carb_g: 1,
+            kcal_100g: Number.NaN,
+            protein_100g: 1,
+            fat_100g: 1,
+            carb_100g: 1,
           },
         ],
       }),

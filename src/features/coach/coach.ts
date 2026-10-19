@@ -9,11 +9,17 @@ import {
 } from "../../context.js";
 import { askCoach, CoachError, type CoachMealContext, type CoachReply } from "../../ai/coach.js";
 import type { FoodItem } from "../../ai/foodAnalyzer.js";
-import { getMealById } from "../../db/meals.js";
+import { getMealById, getMealItemsForMeals } from "../../db/meals.js";
 import { withChatAction } from "../../utils/chatAction.js";
 import { COACH_BUTTON, COACH_EXIT_BUTTON, mainKeyboard } from "../mainMenu.js";
 import { applyMealCorrection, correctionUndos, publishMealCorrection } from "../mealCorrection.js";
-import { buildStoredMealMessage, logDescribedMeal, transcribeVoiceMessage } from "../mealLogging.js";
+import {
+  buildPer100gBlock,
+  buildStoredMealMessage,
+  logDescribedMeal,
+  toFoodItems,
+  transcribeVoiceMessage,
+} from "../mealLogging.js";
 import {
   buildVoiceConfirmMessage,
   settleVoiceConfirmation,
@@ -163,7 +169,12 @@ export function registerCoach(
   function mealContext(userId: number, meal: CoachSessionMeal | undefined): CoachMealContext | undefined {
     if (!meal) return undefined;
     const row = getMealById(db, meal.id, userId);
-    return { entry: row ? buildStoredMealMessage(db, row, getUserTimeZone(db, userId)) : null };
+    if (!row) return { entry: null };
+    // КБЖУ на 100 г — чтобы при правке модель перенесла нетронутые продукты как есть, а не
+    // пересчитывала их из значений порции.
+    const entry = buildStoredMealMessage(db, row, getUserTimeZone(db, userId));
+    const items = toFoodItems(getMealItemsForMeals(db, [row.id]));
+    return { entry: `${entry}\n\n${buildPer100gBlock(items)}` };
   }
 
   // Новый состав от Ням-Ням сохраняет бот — так же, как после «✏️ Изменить».

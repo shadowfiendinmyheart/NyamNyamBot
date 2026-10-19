@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMealMessage, buildNotRecognizedMessage } from "./mealLogging.js";
+import { buildMealMessage, buildNotRecognizedMessage, buildPer100gBlock } from "./mealLogging.js";
 describe("features/mealLogging buildMealMessage", () => {
   it("lists items and totals, and appends notes when present", () => {
     const message = buildMealMessage(
@@ -74,5 +74,14 @@ describe("features/mealLogging buildNotRecognizedMessage", () => {
     expect(buildNotRecognizedMessage("voice", null)).toMatch(
       /^🤔 Не нашла в голосовом ни еды, ни тренировки\.\n/,
     );
+  });
+});
+
+describe("features/mealLogging buildPer100gBlock", () => {
+  it("пересчитывает сохранённые порции на 100 г", () => {
+    const items = [
+      { name: "пельмени", estimatedWeightG: 200, kcal: 500, proteinG: 20, fatG: 25, carbG: 50 },
+    ];
+    expect(buildPer100gBlock(items)).toBe("На 100 г:\n• пельмени: 250 ккал (Б 10 / Ж 12.5 / У 25)");
   });
 });

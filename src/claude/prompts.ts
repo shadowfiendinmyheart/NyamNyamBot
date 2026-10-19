@@ -2,11 +2,19 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { MEAL_TYPES } from "../db/meals.js";
 import { WORKOUT_ACTIVITY_TYPES, WORKOUT_INTENSITIES } from "../nutrition/calculations.js";
 
+// Откуда брать КБЖУ на 100 г — общее для фото, текста и правки записи.
+const NUTRITION_PER_100G_RULES = `- КБЖУ на 100 г, названные пользователем или видные на этикетке, бери как есть.
+- Для продукта конкретного производителя (назван или виден на упаковке) укажи brand и
+  search_query, а КБЖУ на 100 г — как у этого продукта, с учётом жирности и вида.
+- Калории должны сходиться с БЖУ: примерно Б×4 + Ж×9 + У×4.`;
+
 export const SYSTEM_PROMPT = `Ты — опытный нутрициолог-диетолог. Пользователь присылает фото еды и/или
 текстовое описание того, что он съел. Твоя задача — определить состав приёма пищи и оценить
-для каждого продукта/блюда вес порции (в граммах) и КБЖУ (калории, белки, жиры, углеводы).
+для каждого продукта/блюда вес порции (в граммах) и КБЖУ на 100 г (калории, белки, жиры,
+углеводы). КБЖУ порции посчитает бот — сам на вес не умножай.
 
 Правила:
+${NUTRITION_PER_100G_RULES}
 - Если вес порции не указан явно, оценивай его на глаз по фото или по типичным порциям для
   описанного блюда.
 - Учитывай реалистичный способ приготовления (жарка на масле, соус и т.п.), если это видно
@@ -16,6 +24,38 @@ export const SYSTEM_PROMPT = `Ты — опытный нутрициолог-д�
 - Если на фото нет еды или текст не описывает еду, верни food_detected: false и объясни
   почему в notes.
 - Верни результат строго через инструмент analyze_food, без текста вне вызова инструмента.`;
+
+// Один продукт — общий для analyze_food, log_diary_entry и correct_meal
+// (claude/coachPrompts.ts). КБЖУ — на 100 г: порцию по весу считает бот (mapItem в
+// analyzeFood.ts), а не модель — так нет ошибок умножения, а значения на 100 г можно
+// подменить данными из базы продуктов.
+export const FOOD_ITEM_SCHEMA = {
+  type: "object",
+  properties: {
+    name: { type: "string", description: "Название продукта или блюда" },
+    estimated_weight_g: {
+      type: "number",
+      description: "Вес порции в граммах (названный пользователем или оценённый)",
+    },
+    kcal_100g: { type: "number", description: "Калорийность на 100 г, ккал" },
+    protein_100g: { type: "number", description: "Белки на 100 г, г" },
+    fat_100g: { type: "number", description: "Жиры на 100 г, г" },
+    carb_100g: { type: "number", description: "Углеводы на 100 г, г" },
+    brand: {
+      type: "string",
+      description:
+        "Производитель, если он назван или виден на упаковке: «Простоквашино», «Светаево»; " +
+        "для домашней и ресторанной еды не указывай",
+    },
+    search_query: {
+      type: "string",
+      description:
+        "Только вместе с brand: бренд и продукт так, как написано на упаковке, по-русски — " +
+        "«Простоквашино йогурт греческий»",
+    },
+  },
+  required: ["name", "estimated_weight_g", "kcal_100g", "protein_100g", "fat_100g", "carb_100g"],
+};
 
 export const FOOD_ANALYSIS_TOOL: Anthropic.Tool = {
   name: "analyze_food",
@@ -31,21 +71,7 @@ export const FOOD_ANALYSIS_TOOL: Anthropic.Tool = {
       items: {
         type: "array",
         description: "Список распознанных продуктов/блюд",
-        items: {
-          type: "object",
-          properties: {
-            name: { type: "string", description: "Название продукта или блюда" },
-            estimated_weight_g: {
-              type: "number",
-              description: "Оценка веса порции в граммах",
-            },
-            kcal: { type: "number", description: "Калорийность порции, ккал" },
-            protein_g: { type: "number", description: "Белки, г" },
-            fat_g: { type: "number", description: "Жиры, г" },
-            carb_g: { type: "number", description: "Углеводы, г" },
-          },
-          required: ["name", "estimated_weight_g", "kcal", "protein_g", "fat_g", "carb_g"],
-        },
+        items: FOOD_ITEM_SCHEMA,
       },
       notes: {
         type: "string",
@@ -59,7 +85,9 @@ export const FOOD_ANALYSIS_TOOL: Anthropic.Tool = {
 
 // Как оценивать еду по текстовому описанию — общее для записи в дневник и для правки
 // записи в разговоре с Ням-Ням (claude/coachPrompts.ts), чтобы КБЖУ считались одинаково.
-export const FOOD_ESTIMATION_RULES = `- Определи состав и оцени для каждого продукта/блюда вес порции (в граммах) и КБЖУ.
+export const FOOD_ESTIMATION_RULES = `- Определи состав и оцени для каждого продукта/блюда вес порции (в граммах) и КБЖУ на
+  100 г. КБЖУ порции посчитает бот — сам на вес не умножай.
+${NUTRITION_PER_100G_RULES}
 - Если вес порции не указан явно, оценивай его по типичным порциям для описанного блюда.
 - Учитывай реалистичный способ приготовления (жарка на масле, соус и т.п.).`;
 

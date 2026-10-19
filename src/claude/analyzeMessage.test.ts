@@ -34,7 +34,7 @@ describe("claude/analyzeMessage", () => {
       toolUseResponse({
         food_detected: true,
         items: [
-          { name: "банан", estimated_weight_g: 120, kcal: 107, protein_g: 1.3, fat_g: 0.4, carb_g: 27 },
+          { name: "банан", estimated_weight_g: 120, kcal_100g: 89, protein_100g: 1.1, fat_100g: 0.3, carb_100g: 22.5 },
         ],
         workouts: [
           {
@@ -135,7 +135,7 @@ describe("claude/analyzeMessage", () => {
       toolUseResponse({
         food_detected: true,
         items: [
-          { name: "банан", estimated_weight_g: 120, kcal: 107, protein_g: 1.3, fat_g: 0.4, carb_g: 27 },
+          { name: "банан", estimated_weight_g: 120, kcal_100g: 89, protein_100g: 1.1, fat_100g: 0.3, carb_100g: 22.5 },
         ],
         workouts: [
           { activity_type: "running", name: "бег", duration_min: 0.3, intensity: "low" },
@@ -165,7 +165,7 @@ describe("claude/analyzeMessage", () => {
     createMock.mockResolvedValue(
       toolUseResponse({
         food_detected: true,
-        items: [{ name: "плов", estimated_weight_g: 300, kcal: 480, protein_g: 15, fat_g: 18, carb_g: 60 }],
+        items: [{ name: "плов", estimated_weight_g: 300, kcal_100g: 160, protein_100g: 5, fat_100g: 6, carb_100g: 20 }],
         meal_days_ago: 1,
         meal_time: "20:30",
         meal_type: "dinner",
