@@ -1,0 +1,1 @@
+ALTER TABLE `meal_items` ADD `nutrition_source` text;

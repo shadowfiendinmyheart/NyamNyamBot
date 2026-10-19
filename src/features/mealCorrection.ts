@@ -91,6 +91,23 @@ function sameItems(a: MealItemInput[], b: MealItemInput[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// Продукт, который правка не задела (то же название и те же ккал на 100 г), сохраняет
+// источник КБЖУ: ИИ переносит его из записи без бренда, и повторно в базе он не ищется.
+function keepNutritionSource(items: MealItemInput[], previous: MealItemInput[]): MealItemInput[] {
+  const kcalPer100g = (item: MealItemInput) =>
+    item.weightG > 0 ? (item.kcal * 100) / item.weightG : item.kcal;
+  return items.map((item) => {
+    if (item.nutritionSource) return item;
+    const same = previous.find(
+      (old) =>
+        old.nutritionSource &&
+        old.name.trim().toLowerCase() === item.name.trim().toLowerCase() &&
+        Math.abs(kcalPer100g(old) - kcalPer100g(item)) <= 1,
+    );
+    return same ? { ...item, nutritionSource: same.nutritionSource } : item;
+  });
+}
+
 export function buildCorrectionHeader(beforeKcal: number, afterKcal: number): string {
   return beforeKcal === afterKcal
     ? "✅ Обновила запись:"
@@ -110,12 +127,11 @@ export function applyMealCorrection(
   },
 ): AppliedCorrection | "unchanged" | undefined {
   const { userId, mealId, result, sourceMessageId } = input;
-  const items = toMealItemInputs(result.items);
-
   const changed = db.transaction(() => {
     const before = getMealById(db, mealId, userId);
     if (!before) return undefined;
     const previousItems = currentItems(db, mealId);
+    const items = keepNutritionSource(toMealItemInputs(result.items), previousItems);
     if (sameItems(previousItems, items)) return "unchanged" as const;
     if (!updateMeal(db, mealId, userId, { items, rawClaudeResponse: result })) return undefined;
     const after = getMealById(db, mealId, userId);

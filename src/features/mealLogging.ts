@@ -30,6 +30,7 @@ import { downloadTelegramFile } from "../utils/telegram.js";
 import { withChatAction } from "../utils/chatAction.js";
 import { per100gNutrition } from "../nutrition/calculations.js";
 import { buildDayProgressLine } from "./dayProgress.js";
+import { enrichResultWithProductData } from "./productData.js";
 import { deleteMealWithUndo, deletedEntries, undoDeleteKeyboard } from "./deletedEntries.js";
 import { shortLabel } from "../utils/text.js";
 import { smallTalkReply } from "./smallTalk.js";
@@ -61,6 +62,10 @@ export const MEAL_TYPE_LABEL: Record<MealType, string> = {
   snack: "🍎 Перекус",
 };
 
+// Продукт, КБЖУ которого взяты из базы продуктов (features/productData.ts).
+const PRODUCT_DATA_MARK = "📦";
+const PRODUCT_DATA_FOOTNOTE = `${PRODUCT_DATA_MARK} — КБЖУ на 100 г из базы Open Food Facts`;
+
 // dayLabel — подпись дня для записи не за сегодня («вчера»), см. formatMealDay;
 // progressLine — сколько съедено за день и сколько осталось (см. buildDayProgressLine).
 export function buildMealMessage(
@@ -75,7 +80,8 @@ export function buildMealMessage(
   const lines = items.map(
     (item) =>
       `• ${item.name} — ${item.estimatedWeightG} г: ${item.kcal} ккал ` +
-      `(Б ${item.proteinG} / Ж ${item.fatG} / У ${item.carbG})`,
+      `(Б ${item.proteinG} / Ж ${item.fatG} / У ${item.carbG})` +
+      (item.nutritionSource ? ` ${PRODUCT_DATA_MARK}` : ""),
   );
 
   const parts = [
@@ -87,6 +93,7 @@ export function buildMealMessage(
       `Ж ${totals.fatG.toFixed(1)} У ${totals.carbG.toFixed(1)}`,
   ];
 
+  if (items.some((item) => item.nutritionSource)) parts.push(PRODUCT_DATA_FOOTNOTE);
   if (progressLine) parts.push(progressLine);
 
   if (notes) {
@@ -185,7 +192,9 @@ async function logPhotoMeal(db: Db, ctx: MyContext, photos: IncomingPhoto[]): Pr
         .filter(Boolean)
         .join("\n");
 
-      const result = await analyzeFood({ images, text: caption || undefined });
+      const result = await enrichResultWithProductData(
+        await analyzeFood({ images, text: caption || undefined }),
+      );
       if (!result.foodDetected || result.items.length === 0) {
         await ctx.reply(
           `Не получилось распознать еду на фото.${result.notes ? ` ${result.notes}` : ""} ` +
@@ -245,6 +254,7 @@ export function toMealItemInputs(items: FoodItem[]): MealItemInput[] {
     proteinG: item.proteinG,
     fatG: item.fatG,
     carbG: item.carbG,
+    nutritionSource: item.nutritionSource ?? null,
   }));
 }
 
@@ -256,6 +266,7 @@ export function toFoodItems(rows: MealItemRow[]): FoodItem[] {
     proteinG: row.proteinG,
     fatG: row.fatG,
     carbG: row.carbG,
+    ...(row.nutritionSource ? { nutritionSource: row.nutritionSource } : {}),
   }));
 }
 
@@ -337,11 +348,8 @@ export async function logDescribedMeal(
     const userId = ctx.from.id;
     const now = sentAt;
     const timeZone = getUserTimeZone(db, userId);
-    const {
-      food: result,
-      mealTime,
-      workouts,
-    } = await analyzeMessage({ text, now, timeZone });
+    const { food, mealTime, workouts } = await analyzeMessage({ text, now, timeZone });
+    const result = await enrichResultWithProductData(food);
     const hasFood = result.foodDetected && result.items.length > 0;
     const { loggedAt, mealType } = resolveMealTime(mealTime, now, timeZone);
 

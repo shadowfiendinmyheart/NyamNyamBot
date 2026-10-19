@@ -22,7 +22,13 @@ export interface FoodItem {
   // по ним уточняются КБЖУ на 100 г. В БД не хранятся.
   brand?: string;
   searchQuery?: string;
+  // КБЖУ на 100 г назвал пользователь или они видны на этикетке — в базе не уточняются.
+  statedPer100g?: boolean;
+  // Откуда КБЖУ на 100 г; нет — оценка ИИ.
+  nutritionSource?: NutritionSource;
 }
+
+export type NutritionSource = "openfoodfacts";
 
 export interface AnalyzeFoodResult {
   foodDetected: boolean;

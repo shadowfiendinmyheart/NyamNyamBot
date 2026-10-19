@@ -26,6 +26,7 @@ import {
   voiceConfirmKeyboard,
   voiceConfirmPattern,
 } from "../voiceConfirm.js";
+import { enrichWithProductData } from "../productData.js";
 import { createCoachDataSource } from "./dataSource.js";
 import { DiaryOfferStore } from "./diaryOffers.js";
 import { CoachSessionStore, type CoachSessionMeal } from "./session.js";
@@ -188,7 +189,7 @@ export function registerCoach(
       const applied = applyMealCorrection(db, correctionUndos, {
         userId,
         mealId: meal.id,
-        result: { foodDetected: true, items, notes: null },
+        result: { foodDetected: true, items: await enrichWithProductData(items), notes: null },
         sourceMessageId: meal.messageId,
       });
       if (!applied || !ctx.chat) {

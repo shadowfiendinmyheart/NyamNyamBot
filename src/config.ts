@@ -51,4 +51,6 @@ export const config = {
   // Время ежедневной проверки, не пора ли напомнить записать вес (HH:MM, по поясу
   // пользователя).
   weightReminderTime: process.env.WEIGHT_REMINDER_TIME || "09:00",
+  // Уточнять КБЖУ брендовых продуктов по базе Open Food Facts. По умолчанию включено.
+  offLookupEnabled: process.env.OFF_LOOKUP_ENABLED !== "false",
 };

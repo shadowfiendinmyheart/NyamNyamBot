@@ -15,7 +15,11 @@ export interface MealItemInput {
   proteinG: number;
   fatG: number;
   carbG: number;
+  // Откуда КБЖУ: "openfoodfacts" — из базы продуктов, null — оценка ИИ.
+  nutritionSource?: NutritionSource | null;
 }
+
+export type NutritionSource = NonNullable<MealItemRow["nutritionSource"]>;
 
 export interface CreateMealInput {
   userId: number;
@@ -104,6 +108,7 @@ export function createMeal(db: Db, input: CreateMealInput): number {
             proteinG: item.proteinG,
             fatG: item.fatG,
             carbG: item.carbG,
+            nutritionSource: item.nutritionSource ?? null,
           })),
         )
         .run();
@@ -184,6 +189,7 @@ export function updateMeal(
             proteinG: item.proteinG,
             fatG: item.fatG,
             carbG: item.carbG,
+            nutritionSource: item.nutritionSource ?? null,
           })),
         )
         .run();
@@ -227,13 +233,14 @@ export function getMealTimesBetween(
 
 // Продукты записи из БД — во вход createMeal/updateMeal (без id и meal_id).
 export function mealItemRowsToInputs(rows: MealItemRow[]): MealItemInput[] {
-  return rows.map(({ name, weightG, kcal, proteinG, fatG, carbG }) => ({
+  return rows.map(({ name, weightG, kcal, proteinG, fatG, carbG, nutritionSource }) => ({
     name,
     weightG,
     kcal,
     proteinG,
     fatG,
     carbG,
+    nutritionSource,
   }));
 }
 

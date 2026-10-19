@@ -14,6 +14,7 @@ export interface AnalyzeFoodToolItem {
   carb_100g: number;
   brand?: string;
   search_query?: string;
+  stated_per_100g?: boolean;
 }
 
 interface AnalyzeFoodToolInput {
@@ -100,6 +101,7 @@ export function mapItem(item: AnalyzeFoodToolItem): FoodItem {
     estimatedWeightG: item.estimated_weight_g,
     ...portionNutrition(per100g, item.estimated_weight_g, item.name),
     ...(brand ? { brand, searchQuery: searchQuery ?? `${brand} ${item.name}` } : {}),
+    ...(item.stated_per_100g === true ? { statedPer100g: true } : {}),
   };
 }
 

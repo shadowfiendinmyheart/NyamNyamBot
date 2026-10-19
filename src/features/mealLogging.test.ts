@@ -85,3 +85,32 @@ describe("features/mealLogging buildPer100gBlock", () => {
     expect(buildPer100gBlock(items)).toBe("На 100 г:\n• пельмени: 250 ккал (Б 10 / Ж 12.5 / У 25)");
   });
 });
+
+describe("features/mealLogging buildMealMessage product data", () => {
+  it("помечает продукты из базы 📦 и добавляет сноску", () => {
+    const message = buildMealMessage("breakfast", [
+      {
+        name: "греческий йогурт",
+        estimatedWeightG: 116,
+        kcal: 73,
+        proteinG: 10.1,
+        fatG: 2.3,
+        carbG: 2.9,
+        nutritionSource: "openfoodfacts",
+      },
+      { name: "банан", estimatedWeightG: 120, kcal: 107, proteinG: 1.3, fatG: 0.4, carbG: 27 },
+    ], null);
+
+    expect(message).toContain("• греческий йогурт — 116 г: 73 ккал (Б 10.1 / Ж 2.3 / У 2.9) 📦");
+    expect(message).toContain("• банан — 120 г: 107 ккал (Б 1.3 / Ж 0.4 / У 27)\n");
+    expect(message).toContain("📦 — КБЖУ на 100 г из базы Open Food Facts");
+  });
+
+  it("без продуктов из базы сноски нет", () => {
+    const message = buildMealMessage("breakfast", [
+      { name: "банан", estimatedWeightG: 120, kcal: 107, proteinG: 1.3, fatG: 0.4, carbG: 27 },
+    ], null);
+
+    expect(message).not.toContain("📦");
+  });
+});

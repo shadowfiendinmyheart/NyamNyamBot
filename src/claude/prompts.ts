@@ -3,7 +3,8 @@ import { MEAL_TYPES } from "../db/meals.js";
 import { WORKOUT_ACTIVITY_TYPES, WORKOUT_INTENSITIES } from "../nutrition/calculations.js";
 
 // Откуда брать КБЖУ на 100 г — общее для фото, текста и правки записи.
-const NUTRITION_PER_100G_RULES = `- КБЖУ на 100 г, названные пользователем или видные на этикетке, бери как есть.
+const NUTRITION_PER_100G_RULES = `- КБЖУ на 100 г, названные пользователем или видные на этикетке, бери как есть и
+  ставь stated_per_100g: true.
 - Для продукта конкретного производителя (назван или виден на упаковке) укажи brand и
   search_query, а КБЖУ на 100 г — как у этого продукта, с учётом жирности и вида.
 - Калории должны сходиться с БЖУ: примерно Б×4 + Ж×9 + У×4.`;
@@ -52,6 +53,10 @@ export const FOOD_ITEM_SCHEMA = {
       description:
         "Только вместе с brand: бренд и продукт так, как написано на упаковке, по-русски — " +
         "«Простоквашино йогурт греческий»",
+    },
+    stated_per_100g: {
+      type: "boolean",
+      description: "true, если КБЖУ на 100 г назвал пользователь или они видны на этикетке",
     },
   },
   required: ["name", "estimated_weight_g", "kcal_100g", "protein_100g", "fat_100g", "carb_100g"],

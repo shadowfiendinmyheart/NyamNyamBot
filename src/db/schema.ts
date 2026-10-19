@@ -85,6 +85,8 @@ export const mealItems = sqliteTable("meal_items", {
   proteinG: real("protein_g").notNull(),
   fatG: real("fat_g").notNull(),
   carbG: real("carb_g").notNull(),
+  // Откуда КБЖУ на 100 г: "openfoodfacts" — из базы продуктов, null — оценка ИИ.
+  nutritionSource: text("nutrition_source", { enum: ["openfoodfacts"] }),
 });
 
 // Отправленные напоминания и вечерние сводки ("summary") — чтобы не слать одно и то же

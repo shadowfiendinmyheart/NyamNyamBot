@@ -46,6 +46,7 @@ src/
                               # (оценка рациона в сводках: светофор + совет),
                               # CoachDataSource (чтение данных пользователя)
     transcriber.ts            # контракт расшифровки голоса
+    productLookup.ts          # контракт базы продуктов: КБЖУ на 100 г брендового продукта
   claude/
     client.ts                 # общий Anthropic-клиент и классификация ошибок API
     analyzeFood.ts           # реализация FoodAnalyzer поверх Anthropic API
@@ -56,6 +57,7 @@ src/
     onboarding.ts            # инвайт-код + анкета профиля (+ «зачем вам бот» для коуча)
     motivation.ts            # правка ответа «зачем вам бот» из профиля
     mealLogging.ts            # обработка фото (альбом — одна запись)/текста/голоса → meal
+    productData.ts            # КБЖУ брендовых продуктов из базы (📦) вместо оценки ИИ
     dayProgress.ts            # «📊 За день: съедено / норма, осталось» под записью еды
     mealTime.ts               # кнопка «🕐 Время»: тип приёма пищи и день записи
     correction.ts             # диалог правки оценки (старые кнопки «✏️ Изменить»)
@@ -84,6 +86,9 @@ src/
                               # время каждого пользователя + комментарий коуча
   openai/
     transcribeAudio.ts        # реализация Transcriber (OpenAI)
+  openfoodfacts/
+    lookup.ts                 # реализация ProductLookup: поиск Open Food Facts, сопоставление
+                              # бренда и названия, кэш в памяти
   utils/
     dates.ts                  # границы дня/недели в таймзоне пользователя
     timezones.ts              # частые пояса, разбор «Екатеринбург» / «UTC+5» / «МСК+2»
@@ -92,7 +97,8 @@ src/
     proxy.ts                  # proxyDispatcher для PROXY_URL
   nutrition/
     calculations.ts           # формула Миффлина-Сан Жеора + распределение БЖУ,
-                              # расход тренировок по MET
+                              # расход тренировок по MET; КБЖУ порции из КБЖУ на 100 г
+                              # (ИИ отдаёт значения на 100 г, умножает бот)
 docker-compose.yml
 Dockerfile
 .env.example

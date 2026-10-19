@@ -74,6 +74,46 @@ describe("features/mealCorrection", () => {
     expect(applied.entryText).toContain("пельмени — 200 г: 500 ккал");
   });
 
+  it("продукт из базы, который правка не задела, сохраняет 📦; изменённый — теряет", () => {
+    const yogurt = { name: "йогурт", weightG: 116, kcal: 73, proteinG: 10.1, fatG: 2.3, carbG: 2.9 };
+    const yogurtMealId = createMeal(db, {
+      userId: 1,
+      mealType: "breakfast",
+      source: "text",
+      description: "йогурт и банан",
+      items: [
+        { ...yogurt, nutritionSource: "openfoodfacts" },
+        { name: "банан", weightG: 120, kcal: 107, proteinG: 1.3, fatG: 0.4, carbG: 27 },
+      ],
+    });
+    const fix = (yogurtWeightG: number, yogurtKcal: number) =>
+      applyMealCorrection(db, store, {
+        userId: 1,
+        mealId: yogurtMealId,
+        sourceMessageId: null,
+        result: {
+          foodDetected: true,
+          notes: null,
+          items: [
+            { ...yogurt, estimatedWeightG: yogurtWeightG, kcal: yogurtKcal },
+            { name: "банан", estimatedWeightG: 150, kcal: 134, proteinG: 1.7, fatG: 0.5, carbG: 33.8 },
+          ],
+        },
+      });
+
+    fix(116, 73);
+    expect(getMealItemsForMeals(db, [yogurtMealId]).map((item) => item.nutritionSource)).toEqual([
+      "openfoodfacts",
+      null,
+    ]);
+    // 200 г при тех же 63 ккал на 100 г — тот же продукт.
+    fix(200, 126);
+    expect(getMealItemsForMeals(db, [yogurtMealId])[0].nutritionSource).toBe("openfoodfacts");
+    // Другие ккал на 100 г — ИИ оценил продукт заново.
+    fix(200, 180);
+    expect(getMealItemsForMeals(db, [yogurtMealId])[0].nutritionSource).toBeNull();
+  });
+
   it("чужую запись не трогает", () => {
     expect(
       applyMealCorrection(db, store, { userId: 2, mealId, result: corrected, sourceMessageId: null }),

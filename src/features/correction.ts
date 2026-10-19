@@ -8,6 +8,7 @@ import { analyzeFood, type AnalyzeFoodResult, type FoodImage } from "../ai/foodA
 import { getMealById, getMealItemsForMeals, mealPhotoFileIds, type MealRow } from "../db/meals.js";
 import { downloadPhoto, toFoodItems } from "./mealLogging.js";
 import { applyMealCorrection, correctionUndos, publishMealCorrection } from "./mealCorrection.js";
+import { enrichResultWithProductData } from "./productData.js";
 import {
   buildVoiceConfirmMessage,
   claimVoiceConfirmation,
@@ -174,7 +175,9 @@ export function correctionConversation(db: Db, api: Api) {
     try {
       result = await conversation.external(() =>
         withChatActionVia(api, chatId, "typing", async () => {
-          return analyzeFood({ text: prompt, images: await downloadImages() });
+          return enrichResultWithProductData(
+            await analyzeFood({ text: prompt, images: await downloadImages() }),
+          );
         }),
       );
     } catch (err) {

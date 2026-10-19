@@ -85,6 +85,13 @@
       "when": 1791410134309,
       "tag": "0011_add_notification_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792431701933,
+      "tag": "0012_nervous_gunslinger",
+      "breakpoints": true
     }
   ]
 }
