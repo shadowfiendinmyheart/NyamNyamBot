@@ -216,4 +216,20 @@ describe("claude/analyzeMessage", () => {
       retryable: true,
     });
   });
+
+  it("передаёт цель пользователя в system и возвращает food.goalTip", async () => {
+    createMock.mockResolvedValue(
+      toolUseResponse({
+        food_detected: true,
+        items: [{ name: "гречка", estimated_weight_g: 200, kcal_100g: 110, protein_100g: 4, fat_100g: 1, carb_100g: 21 }],
+        goal_tip: "Сытно и без лишнего жира.",
+        workouts: [],
+      }),
+    );
+
+    const result = await analyzeMessage({ text: "гречка 200 г", motivation: "похудеть к лету" });
+
+    expect(createMock.mock.calls[0][0].system.at(-1).text).toContain("«похудеть к лету»");
+    expect(result.food.goalTip).toBe("Сытно и без лишнего жира.");
+  });
 });

@@ -355,4 +355,49 @@ describe("claude/analyzeFood", () => {
       retryable: true,
     });
   });
+
+  it("цель пользователя — отдельным блоком system после статичного промпта, goal_tip → goalTip", async () => {
+    createMock.mockResolvedValue(
+      toolUseResponse({
+        food_detected: true,
+        items: [{ name: "гречка", estimated_weight_g: 200, kcal_100g: 110, protein_100g: 4, fat_100g: 1, carb_100g: 21 }],
+        goal_tip: "  Много белка — хорошо для набора мышц.  ",
+      }),
+    );
+
+    const result = await analyzeFood({ text: "гречка 200 г", motivation: "хочу набрать мышцы" });
+
+    const system = createMock.mock.calls[0][0].system;
+    expect(system[0].text).toContain("нутрициолог");
+    expect(system[1].text).toContain("«хочу набрать мышцы»");
+    expect(result.goalTip).toBe("Много белка — хорошо для набора мышц.");
+  });
+
+  it("без цели goalTip нет, даже если модель его прислала; цели в system нет", async () => {
+    createMock.mockResolvedValue(
+      toolUseResponse({ food_detected: true, items: [{ name: "гречка", estimated_weight_g: 200, kcal_100g: 110, protein_100g: 4, fat_100g: 1, carb_100g: 21 }], goal_tip: "Отличный выбор!" }),
+    );
+
+    const result = await analyzeFood({ text: "гречка 200 г", motivation: "   " });
+
+    const system = createMock.mock.calls[0][0].system as Array<{ text: string }>;
+    expect(system.some((block) => block.text.startsWith("Цель пользователя"))).toBe(false);
+    expect(result).not.toHaveProperty("goalTip");
+  });
+
+  it("слишком длинный goal_tip обрезается по предложению; без еды goalTip нет", async () => {
+    const long = "Белок и сложные углеводы — хорошая основа для набора мышц. " + "Добавьте овощей ".repeat(10) + "в следующий раз.";
+    createMock.mockResolvedValueOnce(
+      toolUseResponse({ food_detected: true, items: [{ name: "гречка", estimated_weight_g: 200, kcal_100g: 110, protein_100g: 4, fat_100g: 1, carb_100g: 21 }], goal_tip: long }),
+    );
+    createMock.mockResolvedValueOnce(
+      toolUseResponse({ food_detected: false, items: [], goal_tip: "Совет" }),
+    );
+
+    const withFood = await analyzeFood({ text: "гречка", motivation: "мышцы" });
+    const noFood = await analyzeFood({ text: "стол", motivation: "мышцы" });
+
+    expect(withFood.goalTip).toBe("Белок и сложные углеводы — хорошая основа для набора мышц.");
+    expect(noFood).not.toHaveProperty("goalTip");
+  });
 });

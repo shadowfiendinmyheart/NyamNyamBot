@@ -9,6 +9,8 @@ export interface FoodImage {
 export interface AnalyzeFoodInput {
   images?: FoodImage[];
   text?: string;
+  // Зачем пользователь ведёт дневник (profiles.motivation) — для goalTip.
+  motivation?: string;
 }
 
 export interface FoodItem {
@@ -34,6 +36,9 @@ export interface AnalyzeFoodResult {
   foodDetected: boolean;
   items: FoodItem[];
   notes: string | null;
+  // Одна короткая фраза о пользе приёма пищи для цели пользователя; нет — цель не
+  // задана (или запись старше этой фичи, или состав поправлен в разговоре с Ням-Ням).
+  goalTip?: string;
 }
 
 export type FoodAnalyzer = (input: AnalyzeFoodInput) => Promise<AnalyzeFoodResult>;

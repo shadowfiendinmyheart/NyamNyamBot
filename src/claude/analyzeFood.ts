@@ -3,7 +3,8 @@ import { classifyApiError, createMessage } from "./client.js";
 import { FoodAnalyzerError } from "../ai/foodAnalyzer.js";
 import type { AnalyzeFoodInput, AnalyzeFoodResult, FoodItem } from "../ai/foodAnalyzer.js";
 import { portionNutrition } from "../nutrition/calculations.js";
-import { FOOD_ANALYSIS_TOOL, SYSTEM_PROMPT } from "./prompts.js";
+import { trimToLastSentence } from "../utils/text.js";
+import { buildGoalBlock, FOOD_ANALYSIS_TOOL, SYSTEM_PROMPT } from "./prompts.js";
 
 export interface AnalyzeFoodToolItem {
   name: string;
@@ -17,10 +18,11 @@ export interface AnalyzeFoodToolItem {
   stated_per_100g?: boolean;
 }
 
-interface AnalyzeFoodToolInput {
+export interface AnalyzeFoodToolInput {
   food_detected: boolean;
   items?: AnalyzeFoodToolItem[];
   notes?: string;
+  goal_tip?: unknown;
 }
 
 export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodResult> {
@@ -42,7 +44,7 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
   // Правка записи без фото (текст, голос) — тоже сюда, но в учёте это не фото.
   const response = await createMessage(images.length > 0 ? "photo" : "message", {
     max_tokens: 16000,
-    system: SYSTEM_PROMPT,
+    system: withGoal(SYSTEM_PROMPT, input.motivation),
     tools: [FOOD_ANALYSIS_TOOL],
     tool_choice: { type: "tool", name: FOOD_ANALYSIS_TOOL.name },
     messages: [{ role: "user", content }],
@@ -65,15 +67,43 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
     );
   }
 
-  return mapToolInput(toolUse.input as AnalyzeFoodToolInput);
+  return mapToolInput(toolUse.input as AnalyzeFoodToolInput, input.motivation);
 }
 
-function mapToolInput(raw: AnalyzeFoodToolInput): AnalyzeFoodResult {
+export function mapToolInput(raw: AnalyzeFoodToolInput, motivation?: string): AnalyzeFoodResult {
+  const items = (raw.items ?? []).map(mapItem);
+  const goalTip =
+    raw.food_detected && items.length > 0 ? goalTipOf(raw.goal_tip, motivation) : undefined;
   return {
     foodDetected: raw.food_detected,
-    items: (raw.items ?? []).map(mapItem),
+    items,
     notes: raw.notes ?? null,
+    ...(goalTip ? { goalTip } : {}),
   };
+}
+
+// Статичный промпт — первым блоком, цель пользователя — следующим (см. buildGoalBlock).
+export function withGoal(
+  prompt: string | Anthropic.TextBlockParam[],
+  motivation: string | undefined,
+): Anthropic.TextBlockParam[] {
+  const system: Anthropic.TextBlockParam[] =
+    typeof prompt === "string" ? [{ type: "text", text: prompt }] : prompt;
+  const goal = motivation?.trim();
+  return goal ? [...system, { type: "text", text: buildGoalBlock(goal) }] : system;
+}
+
+// Страховка, если модель не уложилась в 100 символов из промпта.
+const MAX_GOAL_TIP_CHARS = 140;
+
+// Совет без цели в запросе не показываем: его модель придумала бы сама.
+function goalTipOf(value: unknown, motivation: string | undefined): string | undefined {
+  if (!motivation?.trim() || typeof value !== "string") return undefined;
+  const text = value.trim();
+  // Короткий текст — как есть: trimToLastSentence без превышения длины «дорезал» бы
+  // фразу без точки в конце как оборванную (как commentPart в claude/coach.ts).
+  const tip = text.length > MAX_GOAL_TIP_CHARS ? trimToLastSentence(text, MAX_GOAL_TIP_CHARS) : text;
+  return tip || undefined;
 }
 
 // Модель отдаёт КБЖУ на 100 г, порцию по весу считает бот (portionNutrition).

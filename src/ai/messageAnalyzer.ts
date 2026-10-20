@@ -43,6 +43,8 @@ export interface AnalyzeMessageInput {
   // Текущее время пользователя — чтобы понять «вчера», «в понедельник», «в 9 утра».
   now?: Date;
   timeZone?: string;
+  // Зачем пользователь ведёт дневник (profiles.motivation) — для food.goalTip.
+  motivation?: string;
 }
 
 export type MessageAnalyzer = (input: AnalyzeMessageInput) => Promise<AnalyzeMessageResult>;

@@ -3,6 +3,7 @@ import { Bot, InlineKeyboard, type Api } from "grammy";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../db/schema.js";
 import { getUserTimeZone } from "../db/users.js";
+import { getProfileMotivation } from "../db/profiles.js";
 import type { MyContext } from "../context.js";
 import {
   analyzeFood,
@@ -67,13 +68,15 @@ const PRODUCT_DATA_MARK = "📦";
 const PRODUCT_DATA_FOOTNOTE = `${PRODUCT_DATA_MARK} — КБЖУ на 100 г из базы Open Food Facts`;
 
 // dayLabel — подпись дня для записи не за сегодня («вчера»), см. formatMealDay;
-// progressLine — сколько съедено за день и сколько осталось (см. buildDayProgressLine).
+// progressLine — сколько съедено за день и сколько осталось (см. buildDayProgressLine);
+// goalTip — польза приёма пищи для цели пользователя.
 export function buildMealMessage(
   mealType: MealType,
   items: FoodItem[],
   notes: string | null,
   dayLabel: string | null = null,
   progressLine: string | null = null,
+  goalTip: string | null = null,
 ): string {
   const totals = sumNutrition(items);
 
@@ -96,6 +99,7 @@ export function buildMealMessage(
   if (items.some((item) => item.nutritionSource)) parts.push(PRODUCT_DATA_FOOTNOTE);
   if (progressLine) parts.push(progressLine);
 
+  if (goalTip) parts.push("", `🎯 ${goalTip}`);
   if (notes) {
     parts.push("", `⚠️ ${notes}`);
   }
@@ -125,14 +129,15 @@ export function buildStoredMealMessage(
   now: Date = new Date(),
 ): string {
   const items = toFoodItems(getMealItemsForMeals(db, [meal.id]));
-  const notes = (meal.rawClaudeResponse as { notes?: string | null } | null)?.notes ?? null;
+  const stored = meal.rawClaudeResponse as Partial<AnalyzeFoodResult> | null;
   const dayLabel = formatMealDay(meal.loggedAt, now, timeZone);
   return buildMealMessage(
     meal.mealType,
     items,
-    notes,
+    stored?.notes ?? null,
     dayLabel,
     buildDayProgressLine(db, meal.userId, meal.loggedAt, timeZone, dayLabel),
+    stored?.goalTip ?? null,
   );
 }
 
@@ -155,7 +160,14 @@ async function replyLoggedMeal(
   const dayLabel = formatMealDay(meal.loggedAt, new Date(), timeZone);
   const progress = buildDayProgressLine(db, meal.userId, meal.loggedAt, timeZone, dayLabel);
   await ctx.reply(
-    buildMealMessage(meal.mealType, meal.result.items, meal.result.notes, dayLabel, progress),
+    buildMealMessage(
+      meal.mealType,
+      meal.result.items,
+      meal.result.notes,
+      dayLabel,
+      progress,
+      meal.result.goalTip ?? null,
+    ),
     { reply_markup: mealActionsKeyboard(meal.mealId) },
   );
 }
@@ -193,7 +205,11 @@ async function logPhotoMeal(db: Db, ctx: MyContext, photos: IncomingPhoto[]): Pr
         .join("\n");
 
       const result = await enrichResultWithProductData(
-        await analyzeFood({ images, text: caption || undefined }),
+        await analyzeFood({
+          images,
+          text: caption || undefined,
+          motivation: getProfileMotivation(db, userId),
+        }),
       );
       if (!result.foodDetected || result.items.length === 0) {
         await ctx.reply(
@@ -348,7 +364,12 @@ export async function logDescribedMeal(
     const userId = ctx.from.id;
     const now = sentAt;
     const timeZone = getUserTimeZone(db, userId);
-    const { food, mealTime, workouts } = await analyzeMessage({ text, now, timeZone });
+    const { food, mealTime, workouts } = await analyzeMessage({
+      text,
+      now,
+      timeZone,
+      motivation: getProfileMotivation(db, userId),
+    });
     const result = await enrichResultWithProductData(food);
     const hasFood = result.foodDetected && result.items.length > 0;
     const { loggedAt, mealType } = resolveMealTime(mealTime, now, timeZone);

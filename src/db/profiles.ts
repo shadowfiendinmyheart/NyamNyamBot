@@ -49,6 +49,11 @@ export function getProfileByUserId(db: Db, userId: number): ProfileRow | undefin
   return db.select().from(schema.profiles).where(eq(schema.profiles.userId, userId)).get();
 }
 
+// Зачем пользователь ведёт дневник — для краткой пользы блюда под записью еды.
+export function getProfileMotivation(db: Db, userId: number): string | undefined {
+  return getProfileByUserId(db, userId)?.motivation?.trim() || undefined;
+}
+
 export function setProfileMotivation(
   db: Db,
   userId: number,

@@ -113,4 +113,19 @@ describe("features/mealLogging buildMealMessage product data", () => {
 
     expect(message).not.toContain("📦");
   });
+
+  it("показывает пользу для цели строкой 🎯 перед ⚠️", () => {
+    const lines = buildMealMessage(
+      "lunch",
+      [{ name: "гречка", estimatedWeightG: 200, kcal: 220, proteinG: 8, fatG: 2, carbG: 42 }],
+      "жирность неясна",
+      null,
+      null,
+      "Сытно и без лишнего жира.",
+    ).split("\n");
+
+    const tip = lines.indexOf("🎯 Сытно и без лишнего жира.");
+    expect(tip).toBeGreaterThan(0);
+    expect(lines.indexOf("⚠️ жирность неясна")).toBeGreaterThan(tip);
+  });
 });

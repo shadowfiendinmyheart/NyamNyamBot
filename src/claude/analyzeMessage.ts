@@ -16,7 +16,12 @@ import {
   type WorkoutIntensity,
 } from "../nutrition/calculations.js";
 import { createMessage } from "./client.js";
-import { mapItem, toFoodAnalyzerError, type AnalyzeFoodToolItem } from "./analyzeFood.js";
+import {
+  mapToolInput,
+  toFoodAnalyzerError,
+  withGoal,
+  type AnalyzeFoodToolInput,
+} from "./analyzeFood.js";
 import { DIARY_ENTRY_SYSTEM_PROMPT, DIARY_ENTRY_TOOL } from "./prompts.js";
 
 interface DiaryEntryToolExercise {
@@ -36,10 +41,7 @@ interface DiaryEntryToolWorkout {
   exercises?: DiaryEntryToolExercise[];
 }
 
-interface DiaryEntryToolInput {
-  food_detected: boolean;
-  items?: AnalyzeFoodToolItem[];
-  notes?: string;
+interface DiaryEntryToolInput extends AnalyzeFoodToolInput {
   meal_days_ago?: number;
   meal_time?: string;
   meal_type?: string;
@@ -50,6 +52,7 @@ export async function analyzeMessage({
   text,
   now,
   timeZone,
+  motivation,
 }: AnalyzeMessageInput): Promise<AnalyzeMessageResult> {
   const system: Anthropic.TextBlockParam[] = [{ type: "text", text: DIARY_ENTRY_SYSTEM_PROMPT }];
   if (now && timeZone) {
@@ -58,7 +61,7 @@ export async function analyzeMessage({
 
   const response = await createMessage("message", {
     max_tokens: 16000,
-    system,
+    system: withGoal(system, motivation),
     tools: [DIARY_ENTRY_TOOL],
     tool_choice: { type: "tool", name: DIARY_ENTRY_TOOL.name },
     messages: [{ role: "user", content: text }],
@@ -83,11 +86,7 @@ export async function analyzeMessage({
 
   const raw = toolUse.input as DiaryEntryToolInput;
   return {
-    food: {
-      foodDetected: raw.food_detected,
-      items: (raw.items ?? []).map(mapItem),
-      notes: raw.notes ?? null,
-    },
+    food: mapToolInput(raw, motivation),
     mealTime: {
       daysAgo: normalizeDaysAgo(raw.meal_days_ago),
       minutesOfDay: parseClockTime(raw.meal_time),

@@ -6,6 +6,7 @@ import { config } from "../config.js";
 import type { MyContext } from "../context.js";
 import { analyzeFood, type AnalyzeFoodResult, type FoodImage } from "../ai/foodAnalyzer.js";
 import { getMealById, getMealItemsForMeals, mealPhotoFileIds, type MealRow } from "../db/meals.js";
+import { getProfileMotivation } from "../db/profiles.js";
 import { downloadPhoto, toFoodItems } from "./mealLogging.js";
 import { applyMealCorrection, correctionUndos, publishMealCorrection } from "./mealCorrection.js";
 import { enrichResultWithProductData } from "./productData.js";
@@ -151,6 +152,7 @@ export function correctionConversation(db: Db, api: Api) {
     }
 
     const previous = await conversation.external(() => extractPreviousResult(db, meal));
+    const motivation = await conversation.external(() => getProfileMotivation(db, userId));
     const prompt = buildCorrectionPrompt(previous, userText);
 
     await response.reply("⏳ Пересчитываю с учётом уточнения…");
@@ -176,7 +178,7 @@ export function correctionConversation(db: Db, api: Api) {
       result = await conversation.external(() =>
         withChatActionVia(api, chatId, "typing", async () => {
           return enrichResultWithProductData(
-            await analyzeFood({ text: prompt, images: await downloadImages() }),
+            await analyzeFood({ text: prompt, images: await downloadImages(), motivation }),
           );
         }),
       );
