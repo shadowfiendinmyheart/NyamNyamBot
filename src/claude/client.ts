@@ -124,6 +124,42 @@ export function observeUsage(observer: UsageObserver | undefined): void {
   usageObserver = observer;
 }
 
+// Что за запрос — для учёта расхода в логе: фото, текст/голос, разговор с Ням-Ням,
+// оценка рациона в сводке.
+export type AiCallKind = "photo" | "message" | "coach" | "comment";
+
+export interface AiPrices {
+  inputPerM?: number;
+  outputPerM?: number;
+}
+
+// Поля кэша есть в ответе, но не в типах SDK 0.32.
+type UsageWithCache = Anthropic.Usage & {
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+};
+
+// Строка лога о расходе одного запроса. Закэшированный вход прокси отдаёт отдельно от
+// input_tokens; в ₽ он считается по цене обычного входа — скидку RouterAI на кэш не
+// знаем, так что цена — оценка сверху. Без цен в конфиге — только токены.
+export function formatUsageLine(
+  kind: AiCallKind,
+  model: string,
+  usage: Anthropic.Usage,
+  prices: AiPrices = {},
+): string {
+  const { cache_read_input_tokens, cache_creation_input_tokens } = usage as UsageWithCache;
+  const input = (usage.input_tokens ?? 0) + (cache_creation_input_tokens ?? 0);
+  const cached = cache_read_input_tokens ?? 0;
+  const output = usage.output_tokens ?? 0;
+  let line = `[ai-usage] kind=${kind} model=${model} in=${input} cached=${cached} out=${output}`;
+  if (prices.inputPerM !== undefined && prices.outputPerM !== undefined) {
+    const rub = ((input + cached) * prices.inputPerM + output * prices.outputPerM) / 1_000_000;
+    line += ` ≈${rub.toFixed(2)}₽`;
+  }
+  return line;
+}
+
 // Модели, отказавшиеся работать без рассуждений: следующие запросы к ним сразу идут с
 // рассуждениями, без заведомо отклонённой попытки.
 const reasoningRequired = new Set<string>();
@@ -133,7 +169,11 @@ const reasoningRequired = new Set<string>();
 // промпт и обрезка в claude/coach.ts.
 const REASONING_TOKENS = 4000;
 
-function sendMessage(params: MessageParams, keepThinking = false): Promise<Anthropic.Message> {
+function sendMessage(
+  params: MessageParams,
+  kind: AiCallKind,
+  keepThinking = false,
+): Promise<Anthropic.Message> {
   const model = config.anthropicModel;
   return getClient()
     .messages.create({
@@ -143,25 +183,28 @@ function sendMessage(params: MessageParams, keepThinking = false): Promise<Anthr
     })
     .then(ensureMessage)
     .then((message) => {
-      if (message.usage) usageObserver?.(model, message.usage);
+      if (message.usage) {
+        usageObserver?.(model, message.usage);
+        console.log(formatUsageLine(kind, model, message.usage, config.aiPrices));
+      }
       return message;
     });
 }
 
 // Единственная точка вызова Messages API: модель из конфига, отключённый thinking,
 // совместимый с ним tool_choice и проверка формы ответа — каждому месту вызова остаётся
-// лишь .catch с переводом ошибки для пользователя.
-export function createMessage(params: MessageParams): Promise<Anthropic.Message> {
+// лишь .catch с переводом ошибки для пользователя. kind — для строки расхода в логе.
+export function createMessage(kind: AiCallKind, params: MessageParams): Promise<Anthropic.Message> {
   const model = config.anthropicModel;
-  if (reasoningRequired.has(model)) return sendMessage(withoutForcedToolChoice(params), true);
+  if (reasoningRequired.has(model)) return sendMessage(withoutForcedToolChoice(params), kind, true);
   const first = hasMandatoryThinking(model)
-    ? sendMessage(withoutForcedToolChoice(params))
-    : sendMessage(params).catch((err: unknown) => {
+    ? sendMessage(withoutForcedToolChoice(params), kind)
+    : sendMessage(params, kind).catch((err: unknown) => {
         if (!isForcedToolChoiceRejected(err)) throw err;
         console.warn(
           `Модель ${config.anthropicModel} не принимает принудительный tool_choice (thinking включил прокси?) — повторяю запрос с auto`,
         );
-        return sendMessage(withoutForcedToolChoice(params));
+        return sendMessage(withoutForcedToolChoice(params), kind);
       });
   return first.catch((err: unknown) => {
     if (!isMandatoryReasoningRejected(err)) throw err;
@@ -169,7 +212,7 @@ export function createMessage(params: MessageParams): Promise<Anthropic.Message>
       `Модель ${model} не даёт отключить рассуждения — повторяю запрос с ними и tool_choice auto, следующие сразу так`,
     );
     reasoningRequired.add(model);
-    return sendMessage(withoutForcedToolChoice(params), true);
+    return sendMessage(withoutForcedToolChoice(params), kind, true);
   });
 }
 

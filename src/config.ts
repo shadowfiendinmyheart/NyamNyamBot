@@ -8,6 +8,11 @@ function required(name: string): string {
   return value;
 }
 
+function optionalNumber(name: string): number | undefined {
+  const value = Number(process.env[name]);
+  return process.env[name] && Number.isFinite(value) ? value : undefined;
+}
+
 export const config = {
   get botToken(): string {
     return required("BOT_TOKEN");
@@ -51,6 +56,12 @@ export const config = {
   // Время ежедневной проверки, не пора ли напомнить записать вес (HH:MM, по поясу
   // пользователя).
   weightReminderTime: process.env.WEIGHT_REMINDER_TIME || "09:00",
+  // Цены модели ANTHROPIC_MODEL в ₽ за 1M токенов — для оценки расхода в строках
+  // [ai-usage] лога. Не заданы — в логе только токены.
+  aiPrices: {
+    inputPerM: optionalNumber("AI_PRICE_INPUT_PER_M"),
+    outputPerM: optionalNumber("AI_PRICE_OUTPUT_PER_M"),
+  },
   // Уточнять КБЖУ брендовых продуктов по базе Open Food Facts. По умолчанию включено.
   offLookupEnabled: process.env.OFF_LOOKUP_ENABLED !== "false",
 };

@@ -19,6 +19,8 @@ Telegram-бот для закрытого круга (друзья/семья, �
   tool use / JSON-схему, не парсинг свободного текста. Остальной код зависит от
   провайдер-независимого контракта в `src/ai/foodAnalyzer.ts`, а не от Anthropic SDK
   напрямую — это даёт возможность заменить ИИ-провайдера, поменяв только `src/claude/`.
+  Каждый запрос оставляет в логе строку `[ai-usage]` (тип вызова, токены, ≈₽ при заданных
+  `AI_PRICE_INPUT_PER_M` / `AI_PRICE_OUTPUT_PER_M`) — `formatUsageLine` в `src/claude/client.ts`.
 - **Голос → текст:** `openai` SDK (`src/openai/transcribeAudio.ts`) за контрактом
   `src/ai/transcriber.ts`; ключ `OPENAI_API_KEY`, опционально `OPENAI_BASE_URL`.
 - **Прокси:** `PROXY_URL` (`src/utils/proxy.ts`) — для Telegram и внешних API.

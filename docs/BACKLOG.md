@@ -639,20 +639,21 @@ USDA российских брендов не знает; в Open Food Facts (б
 - **Готово, когда:** после одной правки «творог Светаево — 121 ккал, Б 17 Ж 5 У 1.8 на
   100 г» следующая запись этого творога считается по этим значениям.
 
-## 37. Учёт токенов и стоимости запросов к ИИ
+## 37. Учёт токенов и стоимости запросов к ИИ — ГОТОВО
 Расход на ИИ в проде не измеряется: `observeUsage` (`claude/client.ts`) подключает только
 `scripts/compareModels.ts`. По тикету 33 фото на Gemini 3.8 Flash — ~1 900 входящих и
 600–2 500 исходящих токенов (видимый ответ — лишь ~250–350, остальное — обязательные
 рассуждения), но сколько стоят коуч, разбор текста и оценка рациона — неизвестно. Без
 этого решения по экономии (IDEAS №26–28) принимаются вслепую.
-- [ ] `createMessage(params, kind)` с меткой `AiCallKind` (`photo` / `message` / `coach` /
+- [x] `createMessage(kind, params)` с меткой `AiCallKind` (`photo` / `message` / `coach` /
       `comment`); после ответа — строка лога `[ai-usage] kind=… model=… in=… cached=…
       out=… ≈…₽` (чистая `formatUsageLine`), `observeUsage` не трогаем.
-- [ ] Метки в `analyzeFood` (и правка из `features/correction.ts`), `analyzeMessage`,
+- [x] Метки в `analyzeFood` (и правка из `features/correction.ts`), `analyzeMessage`,
       `askCoach` (строка на каждый раунд tool use), `commentOnPeriod`.
-- [ ] Необязательные `AI_PRICE_INPUT_PER_M` / `AI_PRICE_OUTPUT_PER_M` (₽ за 1M) в
+- [x] Необязательные `AI_PRICE_INPUT_PER_M` / `AI_PRICE_OUTPUT_PER_M` (₽ за 1M) в
       `config.ts` и `.env.example` (82 / 413 — Gemini 3.8 Flash); пусто — ₽ в логе нет.
-- [ ] Тесты `formatUsageLine`: с ценами и без, с кэшированным входом.
+- [x] Тесты `formatUsageLine`: с ценами и без, с кэшированным входом (в ₽ — по цене
+      обычного входа: скидку RouterAI на кэш не знаем).
 - **Готово, когда:** фото, текст и вопрос Ням-Ням оставляют в консоли строки `[ai-usage]`
   с верной меткой, токенами и ценой.
 

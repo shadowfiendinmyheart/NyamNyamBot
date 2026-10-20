@@ -10,7 +10,7 @@ import {
 import type { FoodItem } from "../ai/foodAnalyzer.js";
 import { trimToLastSentence } from "../utils/text.js";
 import { mapItem, type AnalyzeFoodToolItem } from "./analyzeFood.js";
-import { classifyApiError, createMessage } from "./client.js";
+import { classifyApiError, createMessage, type AiCallKind } from "./client.js";
 import {
   ASSESS_DIET_TOOL,
   buildCommentRequest,
@@ -61,7 +61,7 @@ export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
   });
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-    const response = await createCoachMessage({
+    const response = await createCoachMessage("coach", {
       // Новый состав записи — аргументы инструмента рядом с текстом ответа.
       max_tokens: canCorrectMeal ? MEAL_CHAT_MAX_TOKENS : CHAT_MAX_TOKENS,
       system: system.join("\n\n"),
@@ -115,7 +115,7 @@ export async function askCoach(input: AskCoachInput): Promise<CoachReply> {
 }
 
 export async function commentOnPeriod(input: CommentOnPeriodInput): Promise<PeriodComment> {
-  const response = await createCoachMessage({
+  const response = await createCoachMessage("comment", {
     max_tokens: COMMENT_MAX_TOKENS,
     system: COMMENT_SYSTEM_PROMPT,
     tools: [ASSESS_DIET_TOOL],
@@ -164,9 +164,10 @@ function assessmentError(): CoachError {
 }
 
 function createCoachMessage(
+  kind: AiCallKind,
   params: Omit<Anthropic.MessageCreateParamsNonStreaming, "model">,
 ): Promise<Anthropic.Message> {
-  return createMessage(params).catch((err: unknown) => {
+  return createMessage(kind, params).catch((err: unknown) => {
     throw toCoachError(err);
   });
 }

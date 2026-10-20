@@ -56,7 +56,7 @@ export async function analyzeMessage({
     system.push({ type: "text", text: `Сейчас у пользователя: ${formatLocalNow(now, timeZone)}.` });
   }
 
-  const response = await createMessage({
+  const response = await createMessage("message", {
     max_tokens: 16000,
     system,
     tools: [DIARY_ENTRY_TOOL],

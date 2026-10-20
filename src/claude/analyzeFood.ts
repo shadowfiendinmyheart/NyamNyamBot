@@ -39,7 +39,7 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
     content.push({ type: "text", text: input.text });
   }
 
-  const response = await createMessage({
+  const response = await createMessage("photo", {
     max_tokens: 16000,
     system: SYSTEM_PROMPT,
     tools: [FOOD_ANALYSIS_TOOL],
