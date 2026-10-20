@@ -115,14 +115,6 @@ function ensureMessage(response: unknown): Anthropic.Message {
   );
 }
 
-// Учёт токенов каждого запроса — для scripts/compareModels.ts (сравнение моделей по
-// цене); бот его не использует.
-type UsageObserver = (model: string, usage: Anthropic.Usage) => void;
-let usageObserver: UsageObserver | undefined;
-
-export function observeUsage(observer: UsageObserver | undefined): void {
-  usageObserver = observer;
-}
 
 // Что за запрос — для учёта расхода в логе: фото, текст/голос, разговор с Ням-Ням,
 // оценка рациона в сводке.
@@ -155,9 +147,22 @@ export function formatUsageLine(
   let line = `[ai-usage] kind=${kind} model=${model} in=${input} cached=${cached} out=${output}`;
   if (prices.inputPerM !== undefined && prices.outputPerM !== undefined) {
     const rub = ((input + cached) * prices.inputPerM + output * prices.outputPerM) / 1_000_000;
-    line += ` ≈${rub.toFixed(2)}₽`;
+    line += ` ≈${rub.toFixed(3)}₽`;
   }
   return line;
+}
+
+// Учёт токенов каждого запроса. По умолчанию — строка [ai-usage] в лог; свой
+// наблюдатель (scripts/compareModels.ts — сравнение моделей по цене) её заменяет: цены
+// из конфига там относились бы не к той модели. undefined — снова лог.
+type UsageObserver = (model: string, usage: Anthropic.Usage, kind: AiCallKind) => void;
+
+const logUsage: UsageObserver = (model, usage, kind) =>
+  console.log(formatUsageLine(kind, model, usage, config.aiPrices));
+let usageObserver: UsageObserver = logUsage;
+
+export function observeUsage(observer: UsageObserver | undefined): void {
+  usageObserver = observer ?? logUsage;
 }
 
 // Модели, отказавшиеся работать без рассуждений: следующие запросы к ним сразу идут с
@@ -183,10 +188,8 @@ function sendMessage(
     })
     .then(ensureMessage)
     .then((message) => {
-      if (message.usage) {
-        usageObserver?.(model, message.usage);
-        console.log(formatUsageLine(kind, model, message.usage, config.aiPrices));
-      }
+      // Прокси может подменить модель — в учёт идёт та, что ответила.
+      if (message.usage) usageObserver(message.model || model, message.usage, kind);
       return message;
     });
 }

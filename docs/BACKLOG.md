@@ -647,8 +647,11 @@ USDA российских брендов не знает; в Open Food Facts (б
 этого решения по экономии (IDEAS №26–28) принимаются вслепую.
 - [x] `createMessage(kind, params)` с меткой `AiCallKind` (`photo` / `message` / `coach` /
       `comment`); после ответа — строка лога `[ai-usage] kind=… model=… in=… cached=…
-      out=… ≈…₽` (чистая `formatUsageLine`), `observeUsage` не трогаем.
-- [x] Метки в `analyzeFood` (и правка из `features/correction.ts`), `analyzeMessage`,
+      out=… ≈…₽` (чистая `formatUsageLine`), строка — наблюдатель по умолчанию:
+      `observeUsage` в `compareModels` её заменяет (цены из конфига там не той модели);
+      модель — из ответа (`message.model`), прокси может её подменить.
+- [x] Метки в `analyzeFood` (`photo`; правка из `features/correction.ts` без фото —
+      `message`), `analyzeMessage`,
       `askCoach` (строка на каждый раунд tool use), `commentOnPeriod`.
 - [x] Необязательные `AI_PRICE_INPUT_PER_M` / `AI_PRICE_OUTPUT_PER_M` (₽ за 1M) в
       `config.ts` и `.env.example` (82 / 413 — Gemini 3.8 Flash); пусто — ₽ в логе нет.

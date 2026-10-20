@@ -73,7 +73,7 @@ describe("claude/client formatUsageLine", () => {
   it("с ценами — оценка в ₽", () => {
     expect(
       formatUsageLine("coach", "m", usage, { inputPerM: 82, outputPerM: 413 }),
-    ).toBe("[ai-usage] kind=coach model=m in=1883 cached=0 out=1086 ≈0.60₽");
+    ).toBe("[ai-usage] kind=coach model=m in=1883 cached=0 out=1086 ≈0.603₽");
   });
 
   it("кэшированный вход — отдельно, в ₽ по цене входа; запись в кэш — во входе", () => {
@@ -84,7 +84,7 @@ describe("claude/client formatUsageLine", () => {
       cache_creation_input_tokens: 100,
     } as typeof usage;
     expect(formatUsageLine("comment", "m", cachedUsage, { inputPerM: 100, outputPerM: 0 })).toBe(
-      "[ai-usage] kind=comment model=m in=500 cached=1500 out=1086 ≈0.20₽",
+      "[ai-usage] kind=comment model=m in=500 cached=1500 out=1086 ≈0.200₽",
     );
   });
 });

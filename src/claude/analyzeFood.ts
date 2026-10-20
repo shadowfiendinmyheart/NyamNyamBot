@@ -39,7 +39,8 @@ export async function analyzeFood(input: AnalyzeFoodInput): Promise<AnalyzeFoodR
     content.push({ type: "text", text: input.text });
   }
 
-  const response = await createMessage("photo", {
+  // Правка записи без фото (текст, голос) — тоже сюда, но в учёте это не фото.
+  const response = await createMessage(images.length > 0 ? "photo" : "message", {
     max_tokens: 16000,
     system: SYSTEM_PROMPT,
     tools: [FOOD_ANALYSIS_TOOL],
