@@ -13,7 +13,9 @@ Telegram-бот для закрытого круга (друзья/семья, �
 - **Рантайм:** Node.js + TypeScript, ESM (`"type": "module"` в package.json).
 - **Бот:** [grammY](https://grammy.dev/) + `@grammyjs/conversations` (пошаговые диалоги:
   онбординг, коррекция). Long polling, без вебхука.
-- **ИИ:** `@anthropic-ai/sdk`, модель `claude-sonnet-5` (vision). Ответ — строго через
+- **ИИ:** `@anthropic-ai/sdk` через RouterAI (Anthropic-совместимый endpoint), модель —
+  `ANTHROPIC_MODEL`, сейчас `google/gemini-3.8-flash` (выбор — тикет 33,
+  `npm run compare:models`). Ответ — строго через
   tool use / JSON-схему, не парсинг свободного текста. Остальной код зависит от
   провайдер-независимого контракта в `src/ai/foodAnalyzer.ts`, а не от Anthropic SDK
   напрямую — это даёт возможность заменить ИИ-провайдера, поменяв только `src/claude/`.

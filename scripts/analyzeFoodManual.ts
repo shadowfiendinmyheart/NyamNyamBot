@@ -33,8 +33,7 @@ if (image) {
     console.error(`Неподдерживаемое расширение файла: ${image}`);
     process.exit(1);
   }
-  input.imageBase64 = readFileSync(image).toString("base64");
-  input.mimeType = mimeType;
+  input.images = [{ imageBase64: readFileSync(image).toString("base64"), mimeType }];
 }
 if (text) {
   input.text = text;

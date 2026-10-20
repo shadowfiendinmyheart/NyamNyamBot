@@ -115,6 +115,15 @@ function ensureMessage(response: unknown): Anthropic.Message {
   );
 }
 
+// Учёт токенов каждого запроса — для scripts/compareModels.ts (сравнение моделей по
+// цене); бот его не использует.
+type UsageObserver = (model: string, usage: Anthropic.Usage) => void;
+let usageObserver: UsageObserver | undefined;
+
+export function observeUsage(observer: UsageObserver | undefined): void {
+  usageObserver = observer;
+}
+
 // Модели, отказавшиеся работать без рассуждений: следующие запросы к ним сразу идут с
 // рассуждениями, без заведомо отклонённой попытки.
 const reasoningRequired = new Set<string>();
@@ -132,7 +141,11 @@ function sendMessage(params: MessageParams, keepThinking = false): Promise<Anthr
       ...params,
       ...(keepThinking ? { max_tokens: params.max_tokens + REASONING_TOKENS } : thinkingOff(model)),
     })
-    .then(ensureMessage);
+    .then(ensureMessage)
+    .then((message) => {
+      if (message.usage) usageObserver?.(model, message.usage);
+      return message;
+    });
 }
 
 // Единственная точка вызова Messages API: модель из конфига, отключённый thinking,
