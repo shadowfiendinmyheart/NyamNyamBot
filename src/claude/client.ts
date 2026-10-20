@@ -66,6 +66,12 @@ export function isForcedToolChoiceRejected(err: unknown): boolean {
   return err instanceof Error && /tool_choice[^]*not supported/.test(err.message);
 }
 
+// У части моделей (Gemini 3.8 Flash через RouterAI) рассуждения обязательны, а угадать
+// это по имени нельзя: такие отвечают «Reasoning is mandatory … cannot be disabled».
+export function isMandatoryReasoningRejected(err: unknown): boolean {
+  return err instanceof Error && /reasoning is mandatory/i.test(err.message);
+}
+
 // Прокси (ANTHROPIC_BASE_URL) при сбое у себя иногда отвечает 200, но не сообщением
 // Anthropic, а своей ошибкой ({"error": ...}), ответом в формате OpenAI или
 // HTML-страницей. SDK форму ответа не проверяет — без этой проверки код падал бы на
@@ -109,12 +115,22 @@ function ensureMessage(response: unknown): Anthropic.Message {
   );
 }
 
-function sendMessage(params: MessageParams): Promise<Anthropic.Message> {
+// Модели, отказавшиеся работать без рассуждений: следующие запросы к ним сразу идут с
+// рассуждениями, без заведомо отклонённой попытки.
+const reasoningRequired = new Set<string>();
+
+// Рассуждения тратят тот же max_tokens, что и ответ: лимиты коуча (600–1500) рассчитаны
+// на длину текста, и без запаса модель обрывалась бы ещё до ответа. Длину текста держат
+// промпт и обрезка в claude/coach.ts.
+const REASONING_TOKENS = 4000;
+
+function sendMessage(params: MessageParams, keepThinking = false): Promise<Anthropic.Message> {
+  const model = config.anthropicModel;
   return getClient()
     .messages.create({
-      model: config.anthropicModel,
+      model,
       ...params,
-      ...thinkingOff(config.anthropicModel),
+      ...(keepThinking ? { max_tokens: params.max_tokens + REASONING_TOKENS } : thinkingOff(model)),
     })
     .then(ensureMessage);
 }
@@ -123,15 +139,24 @@ function sendMessage(params: MessageParams): Promise<Anthropic.Message> {
 // совместимый с ним tool_choice и проверка формы ответа — каждому месту вызова остаётся
 // лишь .catch с переводом ошибки для пользователя.
 export function createMessage(params: MessageParams): Promise<Anthropic.Message> {
-  if (hasMandatoryThinking(config.anthropicModel)) {
-    return sendMessage(withoutForcedToolChoice(params));
-  }
-  return sendMessage(params).catch((err: unknown) => {
-    if (!isForcedToolChoiceRejected(err)) throw err;
+  const model = config.anthropicModel;
+  if (reasoningRequired.has(model)) return sendMessage(withoutForcedToolChoice(params), true);
+  const first = hasMandatoryThinking(model)
+    ? sendMessage(withoutForcedToolChoice(params))
+    : sendMessage(params).catch((err: unknown) => {
+        if (!isForcedToolChoiceRejected(err)) throw err;
+        console.warn(
+          `Модель ${config.anthropicModel} не принимает принудительный tool_choice (thinking включил прокси?) — повторяю запрос с auto`,
+        );
+        return sendMessage(withoutForcedToolChoice(params));
+      });
+  return first.catch((err: unknown) => {
+    if (!isMandatoryReasoningRejected(err)) throw err;
     console.warn(
-      `Модель ${config.anthropicModel} не принимает принудительный tool_choice (thinking включил прокси?) — повторяю запрос с auto`,
+      `Модель ${model} не даёт отключить рассуждения — повторяю запрос с ними и tool_choice auto, следующие сразу так`,
     );
-    return sendMessage(withoutForcedToolChoice(params));
+    reasoningRequired.add(model);
+    return sendMessage(withoutForcedToolChoice(params), true);
   });
 }
 

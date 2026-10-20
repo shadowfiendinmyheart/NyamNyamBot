@@ -305,6 +305,36 @@ describe("claude/analyzeFood", () => {
     expect(retry.system.at(-1).text).toContain("analyze_food");
   });
 
+  it("модель с обязательными рассуждениями: повтор без отключения thinking и с tool_choice auto", async () => {
+    createMock
+      .mockResolvedValueOnce({
+        type: "error",
+        error: {
+          type: "invalid_request_error",
+          message: "Reasoning is mandatory for this endpoint and cannot be disabled.",
+        },
+      })
+      .mockResolvedValueOnce(toolUseResponse({ food_detected: true, items: [] }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await analyzeFood({ text: "гречка" });
+
+    expect(result.foodDetected).toBe(true);
+    expect(createMock.mock.calls[0][0].thinking).toEqual({ type: "disabled" });
+    const retry = createMock.mock.calls[1][0];
+    expect(retry).not.toHaveProperty("thinking");
+    expect(retry.tool_choice).toEqual({ type: "auto" });
+    // Рассуждения тратят тот же лимит — к нему добавлен запас.
+    expect(retry.max_tokens).toBe(createMock.mock.calls[0][0].max_tokens + 4000);
+
+    // Отказ запомнен: следующий запрос сразу с рассуждениями, без отклонённой попытки.
+    createMock.mockClear();
+    createMock.mockResolvedValue(toolUseResponse({ food_detected: true, items: [] }));
+    await analyzeFood({ text: "гречка" });
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0][0]).not.toHaveProperty("thinking");
+  });
+
   it("does not call a request rejected by the service a temporary overload", async () => {
     createMock.mockResolvedValue({
       type: "error",
