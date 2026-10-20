@@ -137,7 +137,8 @@ export function buildStoredMealMessage(
     stored?.notes ?? null,
     dayLabel,
     buildDayProgressLine(db, meal.userId, meal.loggedAt, timeZone, dayLabel),
-    stored?.goalTip ?? null,
+    // JSON в БД не проверен — не строку не показываем.
+    typeof stored?.goalTip === "string" ? stored.goalTip : null,
   );
 }
 

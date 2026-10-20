@@ -8,7 +8,7 @@ import {
   type PeriodComment,
 } from "../ai/coach.js";
 import type { FoodItem } from "../ai/foodAnalyzer.js";
-import { trimToLastSentence } from "../utils/text.js";
+import { clampPhrase, trimToLastSentence } from "../utils/text.js";
 import { mapItem, type AnalyzeFoodToolItem } from "./analyzeFood.js";
 import { classifyApiError, createMessage, type AiCallKind } from "./client.js";
 import {
@@ -138,24 +138,15 @@ interface AssessDietToolInput {
 }
 
 function toPeriodComment(raw: AssessDietToolInput): PeriodComment {
-  const summary = commentPart(raw.summary, MAX_SUMMARY_CHARS);
+  const summary = clampPhrase(raw.summary, MAX_SUMMARY_CHARS);
   if (!summary) throw assessmentError();
   return {
     verdict: DIET_VERDICTS.find((verdict) => verdict === raw.verdict) ?? null,
     summary,
-    advice: commentPart(raw.advice, MAX_ADVICE_CHARS) || null,
+    advice: clampPhrase(raw.advice, MAX_ADVICE_CHARS) || null,
   };
 }
 
-// Светофор, 🐱 и 💡 перед текстом ставит бот — свой эмодзи модели в начале их задвоил бы.
-const LEADING_EMOJI = /^[\p{Extended_Pictographic}️‍\s]+/u;
-
-// Короткий текст — как есть: trimToLastSentence без превышения длины «дорезал» бы
-// фразу без точки в конце как оборванную.
-function commentPart(value: unknown, maxLength: number): string {
-  const text = typeof value === "string" ? value.replace(LEADING_EMOJI, "").trim() : "";
-  return text.length > maxLength ? trimToLastSentence(text, maxLength) : text;
-}
 
 function assessmentError(): CoachError {
   return new CoachError("🐱 Не получилось оценить рацион. Попробуйте ещё раз.", {

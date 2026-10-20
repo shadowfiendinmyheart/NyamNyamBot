@@ -21,6 +21,18 @@ export function trimToLastSentence(text: string, maxLength = text.length): strin
   return `${(lastSpace > 0 ? slice.slice(0, lastSpace) : slice).trimEnd()}…`;
 }
 
+// Эмодзи перед текстом ставит бот (светофор, 💡, 🎯) — свой эмодзи модели в начале его
+// задвоил бы.
+const LEADING_EMOJI = /^[\p{Extended_Pictographic}️‍\s]+/u;
+
+// Короткая фраза модели (поле инструмента) для строки под эмодзи бота: без своего эмодзи
+// в начале, не длиннее maxLength. Короткий текст — как есть: trimToLastSentence без
+// превышения длины «дорезал» бы фразу без точки в конце как оборванную.
+export function clampPhrase(value: unknown, maxLength: number): string {
+  const text = typeof value === "string" ? value.replace(LEADING_EMOJI, "").trim() : "";
+  return text.length > maxLength ? trimToLastSentence(text, maxLength) : text;
+}
+
 // Короткая подпись для кнопки или строки: первая строка текста, не длиннее maxLength
 // символов (с многоточием, если обрезана).
 export function shortLabel(text: string, maxLength: number): string {

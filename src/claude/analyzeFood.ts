@@ -3,7 +3,7 @@ import { classifyApiError, createMessage } from "./client.js";
 import { FoodAnalyzerError } from "../ai/foodAnalyzer.js";
 import type { AnalyzeFoodInput, AnalyzeFoodResult, FoodItem } from "../ai/foodAnalyzer.js";
 import { portionNutrition } from "../nutrition/calculations.js";
-import { trimToLastSentence } from "../utils/text.js";
+import { clampPhrase } from "../utils/text.js";
 import { buildGoalBlock, FOOD_ANALYSIS_TOOL, SYSTEM_PROMPT } from "./prompts.js";
 
 export interface AnalyzeFoodToolItem {
@@ -98,12 +98,8 @@ const MAX_GOAL_TIP_CHARS = 140;
 
 // Совет без цели в запросе не показываем: его модель придумала бы сама.
 function goalTipOf(value: unknown, motivation: string | undefined): string | undefined {
-  if (!motivation?.trim() || typeof value !== "string") return undefined;
-  const text = value.trim();
-  // Короткий текст — как есть: trimToLastSentence без превышения длины «дорезал» бы
-  // фразу без точки в конце как оборванную (как commentPart в claude/coach.ts).
-  const tip = text.length > MAX_GOAL_TIP_CHARS ? trimToLastSentence(text, MAX_GOAL_TIP_CHARS) : text;
-  return tip || undefined;
+  if (!motivation?.trim()) return undefined;
+  return clampPhrase(value, MAX_GOAL_TIP_CHARS) || undefined;
 }
 
 // Модель отдаёт КБЖУ на 100 г, порцию по весу считает бот (portionNutrition).

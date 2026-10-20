@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trimToLastSentence } from "./text.js";
+import { clampPhrase, trimToLastSentence } from "./text.js";
 
 describe("utils/text trimToLastSentence", () => {
   it("не трогает законченный текст", () => {
@@ -30,5 +30,21 @@ describe("utils/text trimToLastSentence", () => {
   it("пустой текст остаётся пустым, а не превращается в «…»", () => {
     expect(trimToLastSentence("")).toBe("");
     expect(trimToLastSentence("   ")).toBe("");
+  });
+});
+
+describe("clampPhrase", () => {
+  it("убирает эмодзи модели в начале — его ставит бот", () => {
+    expect(clampPhrase("🎯 💪 Много белка — хорошо для мышц", 100)).toBe(
+      "Много белка — хорошо для мышц",
+    );
+  });
+
+  it("короткую фразу без точки не дорезает, длинную — по предложению; не строка — пусто", () => {
+    expect(clampPhrase("Сытно и без лишнего жира", 100)).toBe("Сытно и без лишнего жира");
+    expect(clampPhrase("Первое предложение тут. Второе длинное предложение", 30)).toBe(
+      "Первое предложение тут.",
+    );
+    expect(clampPhrase(42, 100)).toBe("");
   });
 });
